@@ -4,7 +4,23 @@ import { redirect } from "@sveltejs/kit";
 import { base } from "$app/paths";
 import { browser } from "$app/environment";
 import type { PageLoad } from "./$types";
-import { takePendingConversation, type ConversationData } from "$lib/utils/pendingConversation";
+import type { Message } from "$lib/types/Message";
+import type { DeployedSpace } from "$lib/types/Conversation";
+import { conversationRepository } from "$lib/repositories/ConversationRepository";
+import superjson from "superjson";
+
+interface ConversationData {
+	messages: Message[];
+	title: string;
+	model: string;
+	preprompt?: string;
+	rootMessageId?: string;
+	id: string;
+	updatedAt: Date;
+	modelId: string;
+	shared: boolean;
+	deployedSpaces?: Record<string, DeployedSpace>;
+}
 
 export const load: PageLoad = async ({ params, depends, fetch, url, parent }) => {
 	depends(UrlDependency.Conversation);
@@ -37,26 +53,57 @@ export const load: PageLoad = async ({ params, depends, fetch, url, parent }) =>
 		}
 	}
 
-	const fromShare = url.searchParams.get("fromShare") ?? undefined;
+	const fromShare = url.searchParams.get("fromShare") as unknown as string ?? null;
 
-	// A conversation created by this tab hands its payload over via a one-shot
-	// seed (see pendingConversation.ts), consumed here so the first load after
-	// create skips the network round trip. Every other load, including every
-	// invalidate() re-run, fetches fresh data.
-	if (browser && !fromShare) {
-		const seeded = takePendingConversation(params.id);
-		if (seeded) {
-			return seeded;
-		}
-	}
-
-	// Load conversation (works for both owned and shared conversations)
+	// Cache-aside: try server first, fall back to IndexedDB on failure.
+	// Server-confirmed data always overwrites local cache entries.
 	try {
-		return (await client
+		const data = (await client
 			.conversations({ id: params.id })
 			.get({ query: { fromShare } })
 			.then(handleResponse)) as ConversationData;
-	} catch {
+
+		// Persist server-confirmed data to IndexedDB for offline fallback.
+		if (browser) {
+			void conversationRepository.setConversationDetail(params.id, {
+				title: data.title,
+				model: data.model,
+				updatedAt: data.updatedAt.toISOString(),
+				messages: superjson.stringify(data.messages),
+				preprompt: data.preprompt,
+				rootMessageId: data.rootMessageId,
+				shared: data.shared,
+				modelId: data.modelId,
+			});
+		}
+
+		return data;
+	} catch (serverErr) {
+		// Network request failed; attempt to serve from IndexedDB cache.
+		if (browser) {
+			try {
+				const cached = await conversationRepository.getConversationDetail(params.id);
+				if (cached) {
+					console.info("[conversation] serving from IndexedDB fallback for", params.id);
+					return {
+						id: cached.id,
+						title: cached.title,
+						model: cached.model,
+						updatedAt: new Date(cached.updatedAt),
+						messages: superjson.parse(cached.messages) as Message[],
+						preprompt: cached.preprompt,
+						rootMessageId: cached.rootMessageId,
+						shared: cached.shared,
+						modelId: cached.modelId,
+					} satisfies ConversationData;
+				}
+			} catch (cacheErr) {
+				console.error("[conversation] IndexedDB fallback also failed", cacheErr);
+			}
+		}
+
+		// No cache available either — redirect home.
+		console.error("[conversation] load failed for", params.id, serverErr);
 		redirect(302, `${base}/`);
 	}
 };
