@@ -24,6 +24,7 @@
 	import BackgroundGenerationPoller from "$lib/components/BackgroundGenerationPoller.svelte";
 	import { requireAuthUser } from "$lib/utils/auth";
 	import { createConversationsStore } from "$lib/stores/conversations.svelte";
+	import { useIsOnline } from "$lib/stores/isOnline.svelte";
 
 	let { data = $bindable(), children } = $props();
 
@@ -33,16 +34,13 @@
 	const client = useAPIClient();
 
 	const convsStore = createConversationsStore();
-	// Synchronous seed for SSR: $effect is stripped by the server-side compiler,
-	// so we must call init() immediately to populate the list on first paint.
-	// The $effect below handles client-side resyncs when data.conversations
-	// reference changes after subsequent invalidations.
-	// Last-write-wins from server is acceptable; see conversations.svelte.ts.
 	convsStore.init(data.conversations);
 
 	$effect(() => {
 		convsStore.init(data.conversations);
 	});
+
+	const isOnline = useIsOnline();
 
 	let isNavCollapsed = $state(false);
 
@@ -50,7 +48,6 @@
 	let currentError: string | undefined = $state();
 
 	async function onError() {
-		// If a new different error comes, wait for the current error to hide first
 		if ($error && currentError && $error !== currentError) {
 			clearTimeout(errorToastTimeout);
 			currentError = undefined;
@@ -133,14 +130,10 @@
 		setHapticsEnabled($settings.hapticsEnabled);
 	});
 
+	// Service worker update handling
+	let swUpdateAvailable = $state(false);
+
 	onMount(async () => {
-		// Seed the MCP store from the SSR payload before anything else runs.
-		// onMount never fires during SSR, so this matches the server-rendered HTML
-		// (stores at defaults) and avoids hydration mismatches in NavMenu / ChatWindow.
-		// The layout onMount fires after child onMounts (Svelte 5 order), but that
-		// is fine: writeMessage's mcpServersLoaded gate is an async Promise/subscriber,
-		// so when initWithServers sets mcpServersLoaded=true synchronously here, the
-		// subscriber resolves immediately without any added network latency.
 		initWithServers(data.mcpBaseServers ?? []);
 
 		if (publicConfig.isHuggingChat && data.user?.username) {
@@ -150,7 +143,7 @@
 					isPro.set(userData.isPro ?? false);
 				})
 				.catch(() => {
-					// Keep isPro as null on error - don't show any badge if status is unknown
+					// keep isPro as null on error
 				});
 		}
 
@@ -179,8 +172,48 @@
 			});
 		}
 
+		// Register service worker and listen for updates
+		if ("serviceWorker" in navigator) {
+			const registration = await navigator.serviceWorker.getRegistration();
+
+			if (registration) {
+				// A new SW is waiting to activate
+				if (registration.waiting) {
+					swUpdateAvailable = true;
+				}
+
+				// Listen for new SW installations
+				registration.addEventListener("updatefound", () => {
+					const newWorker = registration.installing;
+					if (newWorker) {
+						newWorker.addEventListener("statechange", () => {
+							if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+								swUpdateAvailable = true;
+							}
+						});
+					}
+				});
+			}
+
+			// When the SW takes control, reload to activate the new version
+			navigator.serviceWorker.addEventListener("controllerchange", () => {
+				window.location.reload();
+			});
+		}
+
 		window.addEventListener("keydown", onKeydown, { capture: true });
 	});
+
+	function handleUpdateNow() {
+		swUpdateAvailable = false;
+		if ("serviceWorker" in navigator) {
+			navigator.serviceWorker.getRegistration().then((registration) => {
+				if (registration?.waiting) {
+					registration.waiting.postMessage({ type: "SKIP_WAITING" });
+				}
+			});
+		}
+	}
 
 	let mobileNavTitle = $derived(
 		["/models", "/privacy"].includes(page.route.id ?? "")
@@ -261,6 +294,36 @@
 {/if}
 
 <BackgroundGenerationPoller />
+
+<!-- Offline banner -->
+{#if browser && !isOnline.value}
+	<div
+		class="fixed top-0 right-0 left-0 z-50 flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-md transition-[left] duration-300 {!isNavCollapsed
+			? 'md:left-[260px]'
+			: 'md:left-0'}"
+	>
+		<span class="inline-block size-2 rounded-full bg-white/60"></span>
+		You are currently offline. Some features may be unavailable.
+	</div>
+{/if}
+
+<!-- Service worker update notification -->
+{#if swUpdateAvailable}
+	<div
+		class="fixed top-0 right-0 left-0 z-50 flex items-center justify-center gap-3 bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md transition-[left] duration-300 {!isNavCollapsed
+			? 'md:left-[260px]'
+			: 'md:left-0'}"
+		class:top-8={browser && !isOnline.value}
+	>
+		<span>A new version of {publicConfig.PUBLIC_APP_NAME} is available.</span>
+		<button
+			class="rounded-lg bg-white px-3 py-1 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+			onclick={handleUpdateNow}
+		>
+			Update Now
+		</button>
+	</div>
+{/if}
 
 <div
 	class="fixed grid h-dvh w-screen grid-cols-1 grid-rows-[auto_1fr] overflow-hidden text-smd {!isNavCollapsed
