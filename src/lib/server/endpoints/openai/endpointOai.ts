@@ -4,6 +4,10 @@ import {
 	openAIChatToTextGenerationSingle,
 	openAIChatToTextGenerationStream,
 } from "./openAIChatToTextGenerationStream";
+import {
+	createCompletionWithoutContentSafety,
+	createStreamWithoutContentSafety,
+} from "./contentSafetyRetry";
 import type { CompletionCreateParamsStreaming } from "openai/resources/completions";
 import type {
 	ChatCompletionCreateParamsNonStreaming,
@@ -147,19 +151,21 @@ export async function endpointOai(
 				presence_penalty: parameters?.presence_penalty,
 			};
 
-			const openAICompletion = await openai.completions.create(body, {
-				body: { ...body, ...extraBody },
-				headers: {
-					"ChatUI-Conversation-ID": conversationId?.toString() ?? "",
-					"X-use-cache": "false",
-					...(config.USE_USER_TOKEN === "true" && locals?.token
-						? { Authorization: `Bearer ${locals.token}` }
-						: {}),
-					// Bill to organization if configured
-					...(locals?.billingOrganization ? { "X-HF-Bill-To": locals.billingOrganization } : {}),
-				},
-				signal: abortSignal,
-			});
+			const openAICompletion = await createStreamWithoutContentSafety(() =>
+				openai.completions.create(body, {
+					body: { ...body, ...extraBody },
+					headers: {
+						"ChatUI-Conversation-ID": conversationId?.toString() ?? "",
+						"X-use-cache": "false",
+						...(config.USE_USER_TOKEN === "true" && locals?.token
+							? { Authorization: `Bearer ${locals.token}` }
+							: {}),
+						// Bill to organization if configured
+						...(locals?.billingOrganization ? { "X-HF-Bill-To": locals.billingOrganization } : {}),
+					},
+					signal: abortSignal,
+				})
+			);
 
 			return openAICompletionToTextGenerationStream(openAICompletion);
 		};
@@ -227,9 +233,8 @@ export async function endpointOai(
 
 			// Handle both streaming and non-streaming responses with appropriate processors
 			if (streamingSupported) {
-				const openChatAICompletion = await openai.chat.completions.create(
-					body as ChatCompletionCreateParamsStreaming,
-					{
+				const openChatAICompletion = await createStreamWithoutContentSafety(() =>
+					openai.chat.completions.create(body as ChatCompletionCreateParamsStreaming, {
 						body: { ...body, ...extraBody },
 						headers: {
 							"ChatUI-Conversation-ID": conversationId?.toString() ?? "",
@@ -243,13 +248,12 @@ export async function endpointOai(
 								: {}),
 						},
 						signal: abortSignal,
-					}
+					})
 				);
 				return openAIChatToTextGenerationStream(openChatAICompletion, () => routerMetadata);
 			} else {
-				const openChatAICompletion = await openai.chat.completions.create(
-					body as ChatCompletionCreateParamsNonStreaming,
-					{
+				const openChatAICompletion = await createCompletionWithoutContentSafety(() =>
+					openai.chat.completions.create(body as ChatCompletionCreateParamsNonStreaming, {
 						body: { ...body, ...extraBody },
 						headers: {
 							"ChatUI-Conversation-ID": conversationId?.toString() ?? "",
@@ -263,7 +267,7 @@ export async function endpointOai(
 								: {}),
 						},
 						signal: abortSignal,
-					}
+					})
 				);
 				return openAIChatToTextGenerationSingle(openChatAICompletion, () => routerMetadata);
 			}
