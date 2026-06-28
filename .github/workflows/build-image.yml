@@ -19,8 +19,7 @@ on:
 
 jobs:
   build-and-publish-image-with-db:
-    runs-on:
-      group: aws-general-8-plus
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -40,7 +39,7 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
-            ghcr.io/huggingface/chat-ui-db
+            ghcr.io/opengovsg/duo-db
           tags: |
             type=raw,value=${{ steps.package-version.outputs.VERSION }},enable=${{github.event_name == 'release'}}
             type=raw,value=${{ steps.package-version.outputs.MAJOR }},enable=${{github.event_name == 'release'}}
@@ -80,8 +79,7 @@ jobs:
             INCLUDE_DB=true
             PUBLIC_COMMIT_SHA=${{ env.GITHUB_SHA_SHORT }}
   build-and-publish-image-nodb:
-    runs-on:
-      group: aws-general-8-plus
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -101,7 +99,7 @@ jobs:
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: |
-            ghcr.io/huggingface/chat-ui
+            ghcr.io/opengovsg/duo
           tags: |
             type=raw,value=${{ steps.package-version.outputs.VERSION }},enable=${{github.event_name == 'release'}}
             type=raw,value=${{ steps.package-version.outputs.MAJOR }},enable=${{github.event_name == 'release'}}
