@@ -24,6 +24,7 @@ import {
 import { buildImageRefResolver } from "./fileRefs";
 import { prepareMessagesWithFiles } from "$lib/server/textGeneration/utils/prepareFiles";
 import { makeImageProcessor } from "$lib/server/endpoints/images";
+import { createStreamWithoutContentSafety } from "$lib/server/endpoints/openai/contentSafetyRetry";
 import { logger } from "$lib/server/logger";
 import { AbortedGenerations } from "$lib/server/abortedGenerations";
 
@@ -479,18 +480,18 @@ export async function* runMcpFlow({
 				messages: messagesOpenAI,
 			};
 
-			const completionStream: Stream<ChatCompletionChunk> = await openai.chat.completions.create(
-				completionRequest,
-				{
-					signal: abortSignal,
-					headers: {
-						"ChatUI-Conversation-ID": conv._id.toString(),
-						"X-use-cache": "false",
-						...(config.USE_USER_TOKEN === "true" && locals?.token
-							? { Authorization: `Bearer ${locals.token}` }
-							: {}),
-					},
-				}
+			const completionStream: Stream<ChatCompletionChunk> = await createStreamWithoutContentSafety(
+				() =>
+					openai.chat.completions.create(completionRequest, {
+						signal: abortSignal,
+						headers: {
+							"ChatUI-Conversation-ID": conv._id.toString(),
+							"X-use-cache": "false",
+							...(config.USE_USER_TOKEN === "true" && locals?.token
+								? { Authorization: `Bearer ${locals.token}` }
+								: {}),
+						},
+					})
 			);
 
 			// If provider header was exposed, notify UI so it can render "via {provider}".
