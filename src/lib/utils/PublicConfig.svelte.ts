@@ -34,9 +34,12 @@ class PublicConfigManager {
 		return this.#configStore.PUBLIC_APP_ASSETS === "huggingchat";
 	}
 
-	/** True when per-user state lives in the browser (DB-free deployment). */
+	/**
+	 * Always true: this is a database-free build where per-user state lives in the
+	 * browser. Retained as a named accessor so call sites read intent clearly.
+	 */
 	get isStateClient() {
-		return this.#configStore.PUBLIC_STATE_STORAGE === "client";
+		return true;
 	}
 
 	get assetPath() {
