@@ -96,27 +96,6 @@
 		} catch (e) {
 			// ignore if debug endpoint is unavailable
 		}
-
-		// Fetch billing organizations (only for HuggingChat + logged in users)
-		if (publicConfig.isHuggingChat && page.data.user) {
-			billingOrgsLoading = true;
-			try {
-				const data = (await client.user["billing-orgs"].get().then(handleResponse)) as {
-					userCanPay: boolean;
-					organizations: BillingOrg[];
-					currentBillingOrg?: string;
-				};
-				billingOrgs = data.organizations ?? [];
-				// Update settings if current billing org was cleared by server
-				if (data.currentBillingOrg !== getBillingOrganization()) {
-					setBillingOrganization(data.currentBillingOrg ?? "");
-				}
-			} catch {
-				billingOrgsError = "Failed to load billing options";
-			} finally {
-				billingOrgsLoading = false;
-			}
-		}
 	});
 
 	let themePref = $state<ThemePreference>(browser ? getThemePreference() : "system");
@@ -370,22 +349,9 @@
 
 					if (!confirm("Are you sure you want to delete all conversations?")) return;
 
-					if (publicConfig.isStateClient) {
-						await conversationRepository.clearAll();
-						await convsStore.clearCache();
-						await goto(`${base}/`);
-						return;
-					}
-
-					client.conversations
-						.delete()
-						.then(async () => {
-							await goto(`${base}/`, { invalidateAll: true });
-						})
-						.catch((err) => {
-							console.error(err);
-							$error = err.message;
-						});
+					await conversationRepository.clearAll();
+					await convsStore.clearCache();
+					await goto(`${base}/`);
 				}}
 				type="submit"
 				class="flex items-center underline decoration-red-200 underline-offset-2 hover:decoration-red-500 dark:decoration-red-900 dark:hover:decoration-red-700"

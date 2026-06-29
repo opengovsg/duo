@@ -22,11 +22,8 @@
 	import type { ConvSidebar } from "$lib/types/ConvSidebar";
 	import type { Model } from "$lib/types/Model";
 	import { page } from "$app/state";
-	import InfiniteScroll from "./InfiniteScroll.svelte";
-	import { CONV_NUM_PER_PAGE } from "$lib/constants/pagination";
 	import { browser } from "$app/environment";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
-	import { useAPIClient, handleResponse } from "$lib/APIClient";
 	import { requireAuthUser } from "$lib/utils/auth";
 	import { enabledServersCount } from "$lib/stores/mcpServers";
 	import { isPro } from "$lib/stores/isPro";
@@ -35,13 +32,11 @@
 	import { useIsOnline } from "$lib/stores/isOnline.svelte";
 
 	const publicConfig = usePublicConfig();
-	const client = useAPIClient();
 	const isOnline = useIsOnline();
 
 	interface Props {
 		conversations: ConvSidebar[];
 		user: LayoutData["user"];
-		p?: number;
 		ondeleteConversation?: (id: string) => void;
 		oneditConversationTitle?: (payload: { id: string; title: string }) => void;
 	}
@@ -49,12 +44,9 @@
 	let {
 		conversations = $bindable(),
 		user,
-		p = $bindable(0),
 		ondeleteConversation,
 		oneditConversationTitle,
 	}: Props = $props();
-
-	let hasMore = $state(true);
 
 	function handleNewChatClick(e: MouseEvent) {
 		isAborted.set(true);
@@ -88,33 +80,6 @@
 	});
 
 	const nModels: number = page.data.models.filter((el: Model) => !el.unlisted).length;
-
-	async function handleVisible() {
-		p++;
-		const newConvs = await client.conversations
-			.get({
-				query: {
-					p,
-				},
-			})
-			.then(handleResponse)
-			.then((r) => r.conversations)
-			.catch((): ConvSidebar[] => []);
-
-		if (newConvs.length === 0) {
-			hasMore = false;
-		}
-
-		conversations = [...conversations, ...newConvs];
-	}
-
-	$effect(() => {
-		if (conversations.length <= CONV_NUM_PER_PAGE) {
-			// reset p to 0 if there's only one page of content
-			// that would be caused by a data loading invalidation
-			p = 0;
-		}
-	});
 
 	let isDark = $state(false);
 	let unsubscribeTheme: (() => void) | undefined;
@@ -168,9 +133,6 @@
 			{/if}
 		{/each}
 	</div>
-	{#if hasMore}
-		<InfiniteScroll onvisible={handleVisible} />
-	{/if}
 </div>
 <div
 	class="flex touch-none flex-col gap-px rounded-r-xl border border-l-0 border-gray-100 p-3 text-base sm:text-sm md:mt-3 md:bg-linear-to-l md:from-gray-50 dark:border-transparent md:dark:from-gray-800/30"
