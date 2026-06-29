@@ -40,6 +40,5 @@ export type GETOldModelsResponse = Array<{
 export interface FeatureFlags {
 	enableAssistants: boolean;
 	loginEnabled: boolean;
-	isAdmin: boolean;
 	transcriptionEnabled: boolean;
 }

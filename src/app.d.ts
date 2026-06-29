@@ -9,11 +9,10 @@ declare global {
 	namespace App {
 		// interface Error {}
 		interface Locals {
-			sessionId: string;
 			user?: User;
-			isAdmin: boolean;
+			/** User's OAuth access token (from the sealed session cookie), if logged in */
 			token?: string;
-			/** Organization to bill inference requests to (from settings) */
+			/** Organization to bill inference requests to (from request overrides) */
 			billingOrganization?: string;
 		}
 

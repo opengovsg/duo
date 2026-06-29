@@ -1,33 +1,21 @@
 import type { Message, MessageFile } from "$lib/types/Message";
 import type { EndpointMessage } from "./endpoints";
-import { downloadFile } from "../files/downloadFile";
-import type { ObjectId } from "mongodb";
 
-export async function preprocessMessages(
-	messages: Message[],
-	convId: ObjectId
-): Promise<EndpointMessage[]> {
+export async function preprocessMessages(messages: Message[]): Promise<EndpointMessage[]> {
 	return Promise.resolve(messages)
-		.then((msgs) => downloadFiles(msgs, convId))
+		.then((msgs) => normalizeFiles(msgs))
 		.then((msgs) => injectClipboardFiles(msgs))
 		.then(stripEmptyInitialSystemMessage);
 }
 
-async function downloadFiles(messages: Message[], convId: ObjectId): Promise<EndpointMessage[]> {
-	return Promise.all(
-		messages.map<Promise<EndpointMessage>>((message) =>
-			Promise.all(
-				(message.files ?? []).map((file) =>
-					// In client-state mode files arrive inline as base64 (there is no GridFS
-					// to resolve a hash against), so pass them straight through. "hash" files
-					// (server mode) are fetched from GridFS as base64.
-					file.type === "base64"
-						? Promise.resolve(file as MessageFile & { type: "base64" })
-						: downloadFile(file.value, convId)
-				)
-			).then((files) => ({ ...message, files }))
-		)
-	);
+async function normalizeFiles(messages: Message[]): Promise<EndpointMessage[]> {
+	// Files always arrive inline as base64 (no GridFS in the DB-free server).
+	return messages.map((message) => ({
+		...message,
+		files: (message.files ?? []).filter(
+			(file): file is MessageFile & { type: "base64" } => file.type === "base64"
+		),
+	}));
 }
 
 async function injectClipboardFiles(messages: EndpointMessage[]) {

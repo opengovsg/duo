@@ -7,22 +7,18 @@ import {
 	generators,
 } from "openid-client";
 import type { RequestEvent } from "@sveltejs/kit";
-import { addHours, addWeeks, differenceInMinutes, subMinutes } from "date-fns";
+import { addHours, addWeeks, differenceInMinutes } from "date-fns";
 import { config } from "$lib/server/config";
 import { sha256 } from "$lib/utils/sha256";
 import { z } from "zod";
 import { dev } from "$app/environment";
 import { redirect, type Cookies } from "@sveltejs/kit";
-import { collections } from "$lib/server/database";
+import { sealData, unsealData } from "iron-session";
 import JSON5 from "json5";
 import { logger } from "$lib/server/logger";
 import { ObjectId } from "mongodb";
-import { adminTokenManager } from "./adminToken";
 import type { User } from "$lib/types/User";
-import type { Session } from "$lib/types/Session";
 import { base } from "$app/paths";
-import { acquireLock, isDBLocked, releaseLock } from "$lib/migrations/lock";
-import { Semaphores } from "$lib/types/Semaphore";
 
 export interface OIDCSettings {
 	redirectURI: string;
@@ -66,6 +62,42 @@ export const sameSite = z
 	.enum(["lax", "none", "strict"])
 	.default(!secure || dev || config.ALLOW_INSECURE_COOKIES === "true" ? "lax" : "none")
 	.parse(config.COOKIE_SAMESITE === "" ? undefined : config.COOKIE_SAMESITE);
+
+/**
+ * Secret used to seal the session cookie (iron-session) and to sign CSRF tokens.
+ * iron-session requires at least 32 characters. We only hard-require it when login
+ * is enabled (anonymous-only deployments never seal a session).
+ */
+export const SESSION_SECRET = config.SESSION_SECRET ?? "";
+if (loginEnabled && SESSION_SECRET.length < 32) {
+	throw new Error(
+		"SESSION_SECRET must be set to at least 32 characters when login (OPENID_CLIENT_ID) is enabled."
+	);
+}
+
+const COOKIE_OPTS = {
+	path: "/",
+	sameSite,
+	secure,
+	httpOnly: true,
+} as const;
+
+/** Data sealed into the session cookie. No server-side store backs it. */
+export interface SessionData {
+	user: {
+		hfUserId: string;
+		username?: string;
+		name: string;
+		email?: string;
+		avatarUrl: string;
+	};
+	oauth?: {
+		accessToken: string;
+		refreshToken?: string;
+		/** epoch ms; access token treated as expired shortly before this */
+		expiresAt: number;
+	};
+}
 
 export function sanitizeReturnPath(path: string | undefined | null): string | undefined {
 	if (!path) {
@@ -117,137 +149,148 @@ export function refreshSessionCookie(cookies: Cookies, sessionId: string) {
 	});
 }
 
-export async function findUser(
-	sessionId: string,
-	coupledCookieHash: string | undefined,
-	url: URL
-): Promise<{
-	user: User | null;
-	invalidateSession: boolean;
-	oauth?: Session["oauth"];
-}> {
-	const session = await collections.sessions.findOne({ sessionId });
+/** Deterministic ObjectId for a user, derived from the OIDC subject. */
+async function userObjectId(hfUserId: string): Promise<ObjectId> {
+	return new ObjectId((await sha256(hfUserId)).slice(0, 24));
+}
 
-	if (!session) {
-		return { user: null, invalidateSession: false };
-	}
-
-	if (coupledCookieHash && session.coupledCookieHash !== coupledCookieHash) {
-		return { user: null, invalidateSession: true };
-	}
-
-	// Check if OAuth token needs refresh
-	if (session.oauth?.token && session.oauth.refreshToken) {
-		// If token expires in less than 5 minutes, refresh it
-		if (differenceInMinutes(session.oauth.token.expiresAt, new Date()) < 5) {
-			const lockKey = `${Semaphores.OAUTH_TOKEN_REFRESH}:${sessionId}`;
-
-			// Acquire lock for token refresh
-			const lockId = await acquireLock(lockKey);
-			if (lockId) {
-				try {
-					// Attempt to refresh the token
-					const newTokenSet = await refreshOAuthToken(
-						{ redirectURI: `${config.PUBLIC_ORIGIN}${base}/login/callback` },
-						session.oauth.refreshToken,
-						url
-					);
-
-					if (!newTokenSet || !newTokenSet.access_token) {
-						// Token refresh failed, invalidate session
-						return { user: null, invalidateSession: true };
-					}
-
-					// Update session with new token information
-					const updatedOAuth = tokenSetToSessionOauth(newTokenSet);
-
-					if (!updatedOAuth) {
-						// Token refresh failed, invalidate session
-						return { user: null, invalidateSession: true };
-					}
-
-					await collections.sessions.updateOne(
-						{ sessionId },
-						{
-							$set: {
-								oauth: updatedOAuth,
-								updatedAt: new Date(),
-							},
-						}
-					);
-
-					session.oauth = updatedOAuth;
-				} catch (err) {
-					logger.error(err, "Error during token refresh:");
-					return { user: null, invalidateSession: true };
-				} finally {
-					await releaseLock(lockKey, lockId);
-				}
-			} else if (new Date() > session.oauth.token.expiresAt) {
-				// If the token has expired, we need to wait for the token refresh to complete
-				let attempts = 0;
-				do {
-					await new Promise((resolve) => setTimeout(resolve, 200));
-					attempts++;
-					if (attempts > 20) {
-						return { user: null, invalidateSession: true };
-					}
-				} while (await isDBLocked(lockKey));
-
-				const updatedSession = await collections.sessions.findOne({ sessionId });
-				if (!updatedSession || updatedSession.oauth?.token === session.oauth.token) {
-					return { user: null, invalidateSession: true };
-				}
-
-				session.oauth = updatedSession.oauth;
-			}
-		}
-	} else if (session.oauth?.token && !session.oauth.refreshToken) {
-		if (new Date() > session.oauth.token.expiresAt) {
-			return { user: null, invalidateSession: true };
-		}
-	}
-
+async function sessionDataToUser(data: SessionData): Promise<User> {
 	return {
-		user: await collections.users.findOne({ _id: session.userId }),
-		invalidateSession: false,
-		oauth: session.oauth,
+		_id: await userObjectId(data.user.hfUserId),
+		hfUserId: data.user.hfUserId,
+		username: data.user.username,
+		name: data.user.name,
+		email: data.user.email,
+		avatarUrl: data.user.avatarUrl,
+		createdAt: new Date(),
+		updatedAt: new Date(),
 	};
 }
-export const authCondition = (locals: App.Locals) => {
-	if (!locals.user && !locals.sessionId) {
-		throw new Error("User or sessionId is required");
-	}
 
-	return locals.user
-		? { userId: locals.user._id }
-		: { sessionId: locals.sessionId, userId: { $exists: false } };
-};
-
-export function tokenSetToSessionOauth(tokenSet: TokenSet): Session["oauth"] {
+export function tokenSetToOauth(tokenSet: TokenSet): SessionData["oauth"] | undefined {
 	if (!tokenSet.access_token) {
 		return undefined;
 	}
-
 	return {
-		token: {
-			value: tokenSet.access_token,
-			expiresAt: tokenSet.expires_at
-				? subMinutes(new Date(tokenSet.expires_at * 1000), 1)
-				: addWeeks(new Date(), 2),
-		},
+		accessToken: tokenSet.access_token,
 		refreshToken: tokenSet.refresh_token || undefined,
+		// treat as expired one minute early to avoid edge-of-expiry failures
+		expiresAt: tokenSet.expires_at
+			? tokenSet.expires_at * 1000 - 60_000
+			: addWeeks(new Date(), 2).getTime(),
 	};
 }
 
+/** Seal a session into the cookie. */
+export async function setSessionCookie(cookies: Cookies, data: SessionData): Promise<void> {
+	const sealed = await sealData(data, { password: SESSION_SECRET, ttl: 60 * 60 * 24 * 14 });
+	cookies.set(config.COOKIE_NAME, sealed, { ...COOKIE_OPTS, expires: addWeeks(new Date(), 2) });
+}
+
+export function clearSessionCookie(cookies: Cookies): void {
+	cookies.delete(config.COOKIE_NAME, COOKIE_OPTS);
+}
+
+async function readSessionCookie(cookies: Cookies): Promise<SessionData | null> {
+	const sealed = cookies.get(config.COOKIE_NAME);
+	if (!sealed) return null;
+	try {
+		const data = await unsealData<SessionData>(sealed, { password: SESSION_SECRET });
+		return data && data.user ? data : null;
+	} catch {
+		return null;
+	}
+}
+
+// Dedupe concurrent refreshes for the same user within this instance (replaces the
+// MongoDB semaphore lock). Self-hosted runs a single instance, so this is enough.
+const refreshInFlight = new Map<string, Promise<SessionData["oauth"] | null>>();
+
+async function maybeRefresh(data: SessionData, url: URL): Promise<SessionData | null> {
+	const oauth = data.oauth;
+	if (!oauth) return data;
+
+	const expiresInMin = differenceInMinutes(new Date(oauth.expiresAt), new Date());
+	if (expiresInMin >= 5) return data;
+
+	if (!oauth.refreshToken) {
+		// expired and unrefreshable
+		return Date.now() > oauth.expiresAt ? null : data;
+	}
+
+	const key = data.user.hfUserId;
+	let pending = refreshInFlight.get(key);
+	if (!pending) {
+		pending = (async () => {
+			const tokenSet = await refreshOAuthToken(
+				{ redirectURI: `${config.PUBLIC_ORIGIN}${base}/login/callback` },
+				oauth.refreshToken as string,
+				url
+			).catch((err) => {
+				logger.error(err, "Error refreshing OAuth token");
+				return null;
+			});
+			return tokenSet ? tokenSetToOauth(tokenSet) : null;
+		})().finally(() => refreshInFlight.delete(key));
+		refreshInFlight.set(key, pending);
+	}
+
+	const refreshed = await pending;
+	if (!refreshed) {
+		return Date.now() > oauth.expiresAt ? null : data;
+	}
+	return { ...data, oauth: refreshed };
+}
+
 /**
- * Generates a CSRF token using the user sessionId. Note that we don't need a secret because sessionId is enough.
+ * Resolve the request's identity from the sealed cookie (or a trusted email
+ * header). Refreshes and re-seals the session when the OAuth token is near expiry.
+ * No database is involved.
  */
-async function generateCsrfToken(
-	sessionId: string,
-	redirectUrl: string,
-	next?: string
-): Promise<string> {
+export async function authenticateRequest(
+	headers: Headers,
+	cookies: Cookies,
+	url: URL
+): Promise<{ user?: User; token?: string }> {
+	if (config.TRUSTED_EMAIL_HEADER) {
+		const email = headers.get(config.TRUSTED_EMAIL_HEADER);
+		if (email) {
+			return {
+				user: {
+					_id: await userObjectId(email),
+					name: email,
+					email,
+					hfUserId: email,
+					avatarUrl: "",
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				},
+			};
+		}
+	}
+
+	const data = await readSessionCookie(cookies);
+	if (!data) return { user: undefined };
+
+	const refreshed = await maybeRefresh(data, url);
+	if (!refreshed) {
+		clearSessionCookie(cookies);
+		return { user: undefined };
+	}
+
+	// Re-seal if the token changed during refresh.
+	if (refreshed.oauth?.accessToken !== data.oauth?.accessToken) {
+		await setSessionCookie(cookies, refreshed);
+	}
+
+	return { user: await sessionDataToUser(refreshed), token: refreshed.oauth?.accessToken };
+}
+
+/**
+ * CSRF token signed with the server secret (replaces the per-session-id signature;
+ * the PKCE codeVerifier cookie provides the real per-flow binding).
+ */
+async function generateCsrfToken(redirectUrl: string, next?: string): Promise<string> {
 	const sanitizedNext = sanitizeReturnPath(next);
 	const data = {
 		expiration: addHours(new Date(), 1).getTime(),
@@ -262,7 +305,7 @@ async function generateCsrfToken(
 	return Buffer.from(
 		JSON.stringify({
 			data,
-			signature: await sha256(JSON.stringify(data) + "##" + sessionId),
+			signature: await sha256(JSON.stringify(data) + "##" + SESSION_SECRET),
 		})
 	).toString("base64");
 }
@@ -313,23 +356,16 @@ async function getOIDCClient(settings: OIDCSettings, url: URL): Promise<BaseClie
 
 export async function getOIDCAuthorizationUrl(
 	settings: OIDCSettings,
-	params: { sessionId: string; next?: string; url: URL; cookies: Cookies }
+	params: { next?: string; url: URL; cookies: Cookies }
 ): Promise<string> {
 	const client = await getOIDCClient(settings, params.url);
-	const csrfToken = await generateCsrfToken(
-		params.sessionId,
-		settings.redirectURI,
-		sanitizeReturnPath(params.next)
-	);
+	const csrfToken = await generateCsrfToken(settings.redirectURI, sanitizeReturnPath(params.next));
 
 	const codeVerifier = generators.codeVerifier();
 	const codeChallenge = generators.codeChallenge(codeVerifier);
 
 	params.cookies.set("hfChat-codeVerifier", codeVerifier, {
-		path: "/",
-		sameSite,
-		secure,
-		httpOnly: true,
+		...COOKIE_OPTS,
 		expires: addHours(new Date(), 1),
 	});
 
@@ -376,10 +412,7 @@ export async function refreshOAuthToken(
 	return tokenSet;
 }
 
-export async function validateAndParseCsrfToken(
-	token: string,
-	sessionId: string
-): Promise<{
+export async function validateAndParseCsrfToken(token: string): Promise<{
 	/** This is the redirect url that was passed to the OIDC provider */
 	redirectUrl: string;
 	/** Relative path (within this app) to return to after login */
@@ -397,7 +430,7 @@ export async function validateAndParseCsrfToken(
 			})
 			.parse(JSON.parse(token));
 
-		const reconstructSign = await sha256(JSON.stringify(data) + "##" + sessionId);
+		const reconstructSign = await sha256(JSON.stringify(data) + "##" + SESSION_SECRET);
 
 		if (data.expiration > Date.now() && signature === reconstructSign) {
 			return { redirectUrl: data.redirectUrl, next: sanitizeReturnPath(data.next) };
@@ -408,151 +441,8 @@ export async function validateAndParseCsrfToken(
 	return null;
 }
 
-type CookieRecord = Cookies;
-type HeaderRecord = Headers;
-
-export async function getCoupledCookieHash(cookie: CookieRecord): Promise<string | undefined> {
-	if (!config.COUPLE_SESSION_WITH_COOKIE_NAME) {
-		return undefined;
-	}
-
-	const cookieValue = cookie.get(config.COUPLE_SESSION_WITH_COOKIE_NAME);
-
-	if (!cookieValue) {
-		return "no-cookie";
-	}
-
-	return await sha256(cookieValue);
-}
-
-export async function authenticateRequest(
-	headers: HeaderRecord,
-	cookie: CookieRecord,
-	url: URL,
-	isApi?: boolean
-): Promise<App.Locals & { secretSessionId: string }> {
-	const token = cookie.get(config.COOKIE_NAME);
-
-	let email = null;
-	if (config.TRUSTED_EMAIL_HEADER) {
-		email = headers.get(config.TRUSTED_EMAIL_HEADER);
-	}
-
-	let secretSessionId: string | null = null;
-	let sessionId: string | null = null;
-
-	if (email) {
-		secretSessionId = sessionId = await sha256(email);
-		return {
-			user: {
-				_id: new ObjectId(sessionId.slice(0, 24)),
-				name: email,
-				email,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-				hfUserId: email,
-				avatarUrl: "",
-			},
-			sessionId,
-			secretSessionId,
-			isAdmin: adminTokenManager.isAdmin(sessionId),
-		};
-	}
-
-	if (token) {
-		secretSessionId = token;
-		sessionId = await sha256(token);
-
-		const result = await findUser(sessionId, await getCoupledCookieHash(cookie), url);
-
-		if (result.invalidateSession) {
-			secretSessionId = crypto.randomUUID();
-			sessionId = await sha256(secretSessionId);
-
-			if (await collections.sessions.findOne({ sessionId })) {
-				throw new Error("Session ID collision");
-			}
-		}
-
-		return {
-			user: result.user ?? undefined,
-			token: result.oauth?.token?.value,
-			sessionId,
-			secretSessionId,
-			isAdmin: result.user?.isAdmin || adminTokenManager.isAdmin(sessionId),
-		};
-	}
-
-	if (isApi) {
-		const authorization = headers.get("Authorization");
-		if (authorization?.startsWith("Bearer ")) {
-			const token = authorization.slice(7);
-			const hash = await sha256(token);
-			sessionId = secretSessionId = hash;
-
-			const cacheHit = await collections.tokenCaches.findOne({ tokenHash: hash });
-			if (cacheHit) {
-				const user = await collections.users.findOne({ hfUserId: cacheHit.userId });
-				if (!user) {
-					throw new Error("User not found");
-				}
-				return {
-					user,
-					sessionId,
-					token,
-					secretSessionId,
-					isAdmin: user.isAdmin || adminTokenManager.isAdmin(sessionId),
-				};
-			}
-
-			const response = await fetch("https://huggingface.co/api/whoami-v2", {
-				headers: { Authorization: `Bearer ${token}` },
-			});
-
-			if (!response.ok) {
-				throw new Error("Unauthorized");
-			}
-
-			const data = await response.json();
-			const user = await collections.users.findOne({ hfUserId: data.id });
-			if (!user) {
-				throw new Error("User not found");
-			}
-
-			await collections.tokenCaches.insertOne({
-				tokenHash: hash,
-				userId: data.id,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			});
-
-			return {
-				user,
-				sessionId,
-				secretSessionId,
-				token,
-				isAdmin: user.isAdmin || adminTokenManager.isAdmin(sessionId),
-			};
-		}
-	}
-
-	// Generate new session if none exists
-	secretSessionId = crypto.randomUUID();
-	sessionId = await sha256(secretSessionId);
-
-	if (await collections.sessions.findOne({ sessionId })) {
-		throw new Error("Session ID collision");
-	}
-
-	return { user: undefined, sessionId, secretSessionId, isAdmin: false };
-}
-
-export async function triggerOauthFlow({ url, locals, cookies }: RequestEvent): Promise<Response> {
-	// const referer = request.headers.get("referer");
-	// let redirectURI = `${(referer ? new URL(referer) : url).origin}${base}/login/callback`;
+export async function triggerOauthFlow({ url, cookies }: RequestEvent): Promise<Response> {
 	let redirectURI = `${url.origin}${base}/login/callback`;
-
-	// TODO: Handle errors if provider is not responding
 
 	if (url.searchParams.has("callback")) {
 		const callback = url.searchParams.get("callback") || redirectURI;
@@ -562,23 +452,17 @@ export async function triggerOauthFlow({ url, locals, cookies }: RequestEvent): 
 	}
 
 	// Preserve a safe in-app return path after login.
-	// Priority: explicit ?next=... (must be an absolute path), else the current path (when auto-login kicks in).
 	let next: string | undefined = undefined;
 	const nextParam = sanitizeReturnPath(url.searchParams.get("next"));
 	if (nextParam) {
-		// Only accept absolute in-app paths to prevent open redirects
 		next = nextParam;
 	} else if (!url.pathname.startsWith(`${base}/login`)) {
-		// For automatic login on protected pages, return to the page the user was on
 		next = sanitizeReturnPath(`${url.pathname}${url.search}`) ?? `${base}/`;
 	} else {
 		next = sanitizeReturnPath(`${base}/`) ?? "/";
 	}
 
-	const authorizationUrl = await getOIDCAuthorizationUrl(
-		{ redirectURI },
-		{ sessionId: locals.sessionId, next, url, cookies }
-	);
+	const authorizationUrl = await getOIDCAuthorizationUrl({ redirectURI }, { next, url, cookies });
 
 	throw redirect(302, authorizationUrl);
 }

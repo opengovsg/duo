@@ -1,22 +1,12 @@
 import { error } from "@sveltejs/kit";
 
 /**
- * Throws 401 if neither a user._id nor sessionId is present in locals.
+ * Throws 401 if there is no authenticated user in locals.
+ * (Stateless sessions: identity comes from the sealed cookie; there is no
+ * anonymous server-side sessionId anymore.)
  */
 export function requireAuth(locals: App.Locals): void {
-	if (!locals.user?._id && !locals.sessionId) {
-		error(401, "Must have a valid session or user");
-	}
-}
-
-/**
- * Throws 401 if no user/session, 403 if not admin.
- */
-export function requireAdmin(locals: App.Locals): void {
-	if (!locals.user && !locals.sessionId) {
-		error(401, "Unauthorized");
-	}
-	if (!locals.isAdmin) {
-		error(403, "Admin privileges required");
+	if (!locals.user?._id) {
+		error(401, "Must be logged in");
 	}
 }

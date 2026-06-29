@@ -1,17 +1,9 @@
 import type { Handle, RequestEvent } from "@sveltejs/kit";
-import { collections } from "$lib/server/database";
 import { base } from "$app/paths";
 import { dev } from "$app/environment";
-import {
-	authenticateRequest,
-	loginEnabled,
-	refreshSessionCookie,
-	triggerOauthFlow,
-} from "$lib/server/auth";
+import { authenticateRequest, loginEnabled, triggerOauthFlow } from "$lib/server/auth";
 import { ERROR_MESSAGES } from "$lib/stores/errors";
-import { addWeeks } from "date-fns";
 import { logger } from "$lib/server/logger";
-import { adminTokenManager } from "$lib/server/adminToken";
 import { isHostLocalhost } from "$lib/server/isURLLocal";
 import { runWithRequestContext, updateRequestContext } from "$lib/server/requestContext";
 import { config, ready } from "$lib/server/config";
@@ -59,30 +51,9 @@ export async function handleRequest({ event, resolve }: HandleInput): Promise<Re
 				});
 			}
 
-			if (
-				event.url.pathname.startsWith(`${base}/admin/`) ||
-				event.url.pathname === `${base}/admin`
-			) {
-				const ADMIN_SECRET = config.ADMIN_API_SECRET || config.PARQUET_EXPORT_SECRET;
-
-				if (!ADMIN_SECRET) {
-					return errorResponse(500, "Admin API is not configured");
-				}
-
-				if (event.request.headers.get("Authorization") !== `Bearer ${ADMIN_SECRET}`) {
-					return errorResponse(401, "Unauthorized");
-				}
-			}
-
-			const isApi = event.url.pathname.startsWith(`${base}/api/`);
-			const auth = await authenticateRequest(
-				event.request.headers,
-				event.cookies,
-				event.url,
-				isApi
-			);
-
-			event.locals.sessionId = auth.sessionId;
+			// Resolve identity from the sealed session cookie (or trusted email header).
+			// Re-seals the cookie inline when the OAuth token is refreshed. No database.
+			const auth = await authenticateRequest(event.request.headers, event.cookies, event.url);
 
 			if (loginEnabled && !auth.user && !event.url.pathname.startsWith(`${base}/.well-known/`)) {
 				if (config.AUTOMATIC_LOGIN === "true") {
@@ -91,8 +62,6 @@ export async function handleRequest({ event, resolve }: HandleInput): Promise<Re
 						!event.url.pathname.startsWith(`${base}/login`) &&
 						!event.url.pathname.startsWith(`${base}/healthcheck`)
 					) {
-						// To get the same CSRF token after callback
-						refreshSessionCookie(event.cookies, auth.secretSessionId);
 						return await triggerOauthFlow(event);
 					}
 				} else {
@@ -108,7 +77,6 @@ export async function handleRequest({ event, resolve }: HandleInput): Promise<Re
 						!event.url.pathname.startsWith(`${base}/models/`) &&
 						!event.url.pathname.startsWith(`${base}/api`)
 					) {
-						refreshSessionCookie(event.cookies, auth.secretSessionId);
 						return triggerOauthFlow(event);
 					}
 				}
@@ -121,9 +89,6 @@ export async function handleRequest({ event, resolve }: HandleInput): Promise<Re
 			if (auth.user?.username) {
 				updateRequestContext({ user: auth.user.username });
 			}
-
-			event.locals.isAdmin =
-				event.locals.user?.isAdmin || adminTokenManager.isAdmin(event.locals.sessionId);
 
 			// CSRF protection
 			const requestContentType = event.request.headers.get("content-type")?.split(";")[0] ?? "";
@@ -154,24 +119,9 @@ export async function handleRequest({ event, resolve }: HandleInput): Promise<Re
 			}
 
 			if (
-				event.request.method === "POST" ||
-				event.url.pathname.startsWith(`${base}/login`) ||
-				event.url.pathname.startsWith(`${base}/login/callback`)
-			) {
-				// if the request is a POST request or login-related we refresh the cookie
-				refreshSessionCookie(event.cookies, auth.secretSessionId);
-
-				await collections.sessions.updateOne(
-					{ sessionId: auth.sessionId },
-					{ $set: { updatedAt: new Date(), expiresAt: addWeeks(new Date(), 2) } }
-				);
-			}
-
-			if (
 				loginEnabled &&
 				!event.locals.user &&
 				!event.url.pathname.startsWith(`${base}/login`) &&
-				!event.url.pathname.startsWith(`${base}/admin`) &&
 				!event.url.pathname.startsWith(`${base}/settings`) &&
 				!["GET", "OPTIONS", "HEAD"].includes(event.request.method)
 			) {
