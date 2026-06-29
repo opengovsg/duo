@@ -17,9 +17,33 @@
 	import { browser } from "$app/environment";
 	import { getThemePreference, setTheme, type ThemePreference } from "$lib/switchTheme";
 	import { supportsHaptics } from "$lib/utils/haptics";
+	import {
+		exportAllConversations,
+		importConversationsFromFile,
+	} from "$lib/utils/conversationExport";
+	import { conversationRepository } from "$lib/repositories/ConversationRepository";
+	import { useConversationsStore } from "$lib/stores/conversations.svelte";
 
 	const publicConfig = usePublicConfig();
 	let settings = useSettingsStore();
+	const convsStore = useConversationsStore();
+
+	let importing = $state(false);
+	async function handleImportFile(e: Event & { currentTarget: HTMLInputElement }) {
+		const input = e.currentTarget;
+		const file = input.files?.[0];
+		if (!file) return;
+		importing = true;
+		try {
+			await importConversationsFromFile(file);
+			await convsStore.initFromCache();
+		} catch (err) {
+			$error = (err as Error).message;
+		} finally {
+			importing = false;
+			input.value = "";
+		}
+	}
 
 	// Functional bindings for store fields (Svelte 5): avoid mutating $settings directly
 	function getShareWithAuthors() {
@@ -315,20 +339,53 @@
 					><CarbonArrowUpRight class="mr-1.5 shrink-0 text-sm " /> About & Privacy</a
 				>
 			{/if}
+			{#if publicConfig.isStateClient}
+				<!-- Client-state mode: conversations live in this browser. Export/import
+				     is the portability substitute for sharing. -->
+				<button
+					onclick={(e) => {
+						e.preventDefault();
+						void exportAllConversations();
+					}}
+					class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
+					><CarbonArrowUpRight class="mr-1.5 shrink-0 text-sm" /> Export all conversations</button
+				>
+				<label
+					class="flex cursor-pointer items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
+				>
+					<CarbonArrowUpRight class="mr-1.5 shrink-0 text-sm" />
+					{importing ? "Importing…" : "Import conversations"}
+					<input
+						type="file"
+						accept="application/json,.json"
+						class="hidden"
+						disabled={importing}
+						onchange={handleImportFile}
+					/>
+				</label>
+			{/if}
 			<button
 				onclick={async (e) => {
 					e.preventDefault();
 
-					confirm("Are you sure you want to delete all conversations?") &&
-						client.conversations
-							.delete()
-							.then(async () => {
-								await goto(`${base}/`, { invalidateAll: true });
-							})
-							.catch((err) => {
-								console.error(err);
-								$error = err.message;
-							});
+					if (!confirm("Are you sure you want to delete all conversations?")) return;
+
+					if (publicConfig.isStateClient) {
+						await conversationRepository.clearAll();
+						await convsStore.clearCache();
+						await goto(`${base}/`);
+						return;
+					}
+
+					client.conversations
+						.delete()
+						.then(async () => {
+							await goto(`${base}/`, { invalidateAll: true });
+						})
+						.catch((err) => {
+							console.error(err);
+							$error = err.message;
+						});
 				}}
 				type="submit"
 				class="flex items-center underline decoration-red-200 underline-offset-2 hover:decoration-red-500 dark:decoration-red-900 dark:hover:decoration-red-700"

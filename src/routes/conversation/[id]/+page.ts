@@ -1,4 +1,5 @@
 import { browser } from "$app/environment";
+import { env as publicEnv } from "$env/dynamic/public";
 import { useAPIClient, handleResponse } from "$lib/APIClient";
 import { UrlDependency } from "$lib/types/UrlDependency";
 import { redirect } from "@sveltejs/kit";
@@ -7,7 +8,14 @@ import type { PageLoad } from "./$types";
 import type { Message } from "$lib/types/Message";
 import type { DeployedSpace } from "$lib/types/Conversation";
 import { conversationRepository } from "$lib/repositories/ConversationRepository";
+import { convertLegacyConversation } from "$lib/utils/tree/convertLegacyConversation";
 import superjson from "superjson";
+
+const isClientState = publicEnv.PUBLIC_STATE_STORAGE === "client";
+
+// In client-state ("DB-free") mode the conversation lives only in the browser's
+// IndexedDB, so this page can only render client-side.
+export const ssr = !isClientState;
 
 interface ConversationData {
 	messages: Message[];
@@ -24,6 +32,38 @@ interface ConversationData {
 
 export const load: PageLoad = async ({ params, depends, fetch, url, parent }) => {
 	depends(UrlDependency.Conversation);
+
+	// Client-state mode: read the conversation straight from IndexedDB. There is
+	// no server record, and sharing/share-import is disabled in this mode.
+	if (isClientState) {
+		const cached = await conversationRepository.getConversationDetail(params.id);
+		if (!cached) {
+			redirect(302, `${base}/`);
+		}
+		let messages = superjson.parse(cached.messages) as Message[];
+		let rootMessageId = cached.rootMessageId;
+		// Convert any legacy (rootMessageId-less) conversation to tree form.
+		if (!rootMessageId && messages.length > 0) {
+			const converted = convertLegacyConversation({
+				messages,
+				rootMessageId,
+				preprompt: cached.preprompt,
+			});
+			messages = converted.messages;
+			rootMessageId = converted.rootMessageId;
+		}
+		return {
+			id: cached.id,
+			title: cached.title,
+			model: cached.model,
+			updatedAt: new Date(cached.updatedAt),
+			messages,
+			preprompt: cached.preprompt,
+			rootMessageId,
+			shared: cached.shared,
+			modelId: cached.modelId,
+		} satisfies ConversationData;
+	}
 
 	const client = useAPIClient({ fetch, origin: url.origin });
 

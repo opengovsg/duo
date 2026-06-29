@@ -4,8 +4,10 @@ import { config } from "$lib/server/config";
 import { models, validModelIdSchema } from "$lib/server/models";
 import { ERROR_MESSAGES } from "$lib/stores/errors";
 import type { Message } from "$lib/types/Message";
+import type { Conversation } from "$lib/types/Conversation";
 import { error } from "@sveltejs/kit";
 import { ObjectId } from "mongodb";
+import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
 import {
 	MessageUpdateStatus,
@@ -42,6 +44,10 @@ export async function POST({ request, locals, params, getClientAddress }) {
 	const convId = new ObjectId(id);
 	const promptedAt = new Date();
 
+	// In client-state ("DB-free") mode the browser owns the conversation tree and
+	// sends the prompt context with each request; the server persists nothing.
+	const isClient = config.isStateClient;
+
 	const userId = locals.user?._id ?? locals.sessionId;
 
 	// check user
@@ -49,98 +55,7 @@ export async function POST({ request, locals, params, getClientAddress }) {
 		error(401, "Unauthorized");
 	}
 
-	// check if the user has access to the conversation
-	const convBeforeCheck = await collections.conversations.findOne({
-		_id: convId,
-		...authCondition(locals),
-	});
-
-	if (convBeforeCheck && !convBeforeCheck.rootMessageId) {
-		const res = await collections.conversations.updateOne(
-			{
-				_id: convId,
-			},
-			{
-				$set: {
-					...convBeforeCheck,
-					...convertLegacyConversation(convBeforeCheck),
-				},
-			}
-		);
-
-		if (!res.acknowledged) {
-			error(500, "Failed to convert conversation");
-		}
-	}
-
-	const conv = await collections.conversations.findOne({
-		_id: convId,
-		...authCondition(locals),
-	});
-
-	if (!conv) {
-		error(404, "Conversation not found");
-	}
-
-	// A new generation invalidates any stale stop marker for this conversation.
-	// The abortedGenerations collection is the cross-pod abort channel:
-	// stop-generating upserts a marker, and the watcher in the stream below
-	// polls it. Clearing stale markers here — before the client could possibly
-	// issue a stop for THIS generation (its fetch has not returned yet) — means
-	// any marker observed later was meant for us, with no wall-clock comparison
-	// between pods needed. Markers younger than the grace window are preserved:
-	// they belong to a stop for a still-winding-down generation in this same
-	// conversation (e.g. issued from another tab), whose watcher must get the
-	// chance to observe them; aborted generations consume their marker on
-	// shutdown, so a fresh marker is never a stale one.
-	await collections.abortedGenerations.deleteOne({
-		conversationId: convId,
-		updatedAt: { $lt: new Date(Date.now() - STOP_MARKER_GRACE_MS) },
-	});
-
-	// register the event for ratelimiting
-	await collections.messageEvents.insertOne({
-		type: "message",
-		userId,
-		createdAt: new Date(),
-		expiresAt: new Date(Date.now() + 60_000),
-		ip: getClientAddress(),
-	});
-
-	if (usageLimits?.messagesPerMinute) {
-		// check if the user is rate limited
-		const nEvents = Math.max(
-			await collections.messageEvents.countDocuments({
-				userId,
-				type: "message",
-				expiresAt: { $gt: new Date() },
-			}),
-			await collections.messageEvents.countDocuments({
-				ip: getClientAddress(),
-				type: "message",
-				expiresAt: { $gt: new Date() },
-			})
-		);
-		if (nEvents > usageLimits.messagesPerMinute) {
-			error(429, ERROR_MESSAGES.rateLimited);
-		}
-	}
-
-	if (usageLimits?.messages && conv.messages.length > usageLimits.messages) {
-		error(
-			429,
-			`This conversation has more than ${usageLimits.messages} messages. Start a new one to continue`
-		);
-	}
-
-	// fetch the model
-	const model = models.find((m) => m.id === conv.model);
-
-	if (!model) {
-		error(410, "Model not available anymore");
-	}
-
-	// finally parse the content of the request
+	// parse the content of the request
 	const form = await request.formData();
 
 	const json = form.get("data");
@@ -157,6 +72,9 @@ export async function POST({ request, locals, params, getClientAddress }) {
 		selectedMcpServerNames,
 		selectedMcpServers,
 		timezone,
+		model: clientModel,
+		messages: clientMessages,
+		overrides: clientOverrides,
 	} = z
 		.object({
 			id: z.string().uuid().refine(isMessageId).optional(), // parent message id to append to for a normal message, or the message id for a retry/continue
@@ -195,6 +113,21 @@ export async function POST({ request, locals, params, getClientAddress }) {
 					})
 				)
 			),
+			// client-state mode only: the browser sends the model, the root→leaf
+			// prompt subtree it already built, and the per-model settings overrides
+			// it used to read from the `settings` collection.
+			model: z.optional(z.string()),
+			messages: z.optional(z.array(z.record(z.string(), z.unknown()))),
+			overrides: z.optional(
+				z.object({
+					forceMultimodal: z.optional(z.boolean()),
+					forceTools: z.optional(z.boolean()),
+					provider: z.optional(z.string()),
+					reasoningEffort: z.optional(z.enum(["low", "medium", "high"])),
+					artifactsOverride: z.optional(z.boolean()),
+					billingOrganization: z.optional(z.string()),
+				})
+			),
 		})
 		.parse(JSON.parse(json));
 
@@ -220,79 +153,261 @@ export async function POST({ request, locals, params, getClientAddress }) {
 		(locals as unknown as Record<string, unknown>).timezone = timezone;
 	}
 
-	const inputFiles = await Promise.all(
-		form
-			.getAll("files")
-			.filter((entry): entry is File => entry instanceof File && entry.size > 0)
-			.map(async (file) => {
-				const [type, ...name] = file.name.split(";");
-
-				return {
-					type: z.literal("base64").or(z.literal("hash")).parse(type),
-					value: await file.text(),
-					mime: file.type,
-					name: name.join(";"),
-				};
-			})
-	);
-
 	if (usageLimits?.messageLength && (newPrompt?.length ?? 0) > usageLimits.messageLength) {
 		error(400, "Message too long.");
 	}
-
-	// each file is either:
-	// base64 string requiring upload to the server
-	// hash pointing to an existing file
-	const hashFiles = inputFiles?.filter((file) => file.type === "hash") ?? [];
-	const b64Files =
-		inputFiles
-			?.filter((file) => file.type !== "hash")
-			.map((file) => {
-				const blob = Buffer.from(file.value, "base64");
-				return new File([blob], file.name, { type: file.mime });
-			}) ?? [];
-
-	// check sizes
-	// todo: make configurable
-	if (b64Files.some((file) => file.size > 10 * 1024 * 1024)) {
-		error(413, "File too large, should be <10MB");
-	}
-
-	const uploadedFiles = await Promise.all(b64Files.map((file) => uploadFile(file, conv))).then(
-		(files) => [...files, ...hashFiles]
-	);
 
 	// we will append tokens to the content of this message
 	let messageToWriteToId: Message["id"] | undefined = undefined;
 	// used for building the prompt, subtree of the conversation that goes from the latest message to the root
 	let messagesForPrompt: Message[] = [];
+	// the conversation the pipeline reads metadata from; loaded from MongoDB in
+	// server mode, synthesized from the request in client mode.
+	let conv: Conversation;
+	let messageToWriteTo: Message;
+	let model: (typeof models)[number] | undefined;
 
-	if (isRetry && messageId) {
-		// two cases, if we're retrying a user message with a newPrompt set,
-		// it means we're editing a user message
-		// if we're retrying on an assistant message, newPrompt cannot be set
-		// it means we're retrying the last assistant message for a new answer
-
-		const messageToRetry = conv.messages.find((message) => message.id === messageId);
-
-		if (!messageToRetry) {
-			error(404, "Message not found");
+	if (isClient) {
+		// ---- client-state mode: stateless, no MongoDB I/O ----
+		model = models.find((m) => m.id === clientModel);
+		if (!model) {
+			error(410, "Model not available anymore");
 		}
 
-		if (messageToRetry.from === "user" && newPrompt) {
-			// add a sibling to this message from the user, with the alternative prompt
-			// add a children to that sibling, where we can write to
-			const newUserMessageId = addSibling(
+		if (!clientMessages || clientMessages.length === 0) {
+			error(400, "Missing prompt messages");
+		}
+
+		messagesForPrompt = clientMessages as unknown as Message[];
+
+		// reject oversized inline (base64) attachments — the body cap that GridFS
+		// upload used to enforce server-side.
+		for (const message of messagesForPrompt) {
+			for (const file of message.files ?? []) {
+				if (file.type === "base64" && file.value.length > 14 * 1024 * 1024) {
+					error(413, "File too large, should be <10MB");
+				}
+			}
+		}
+
+		const systemMessage =
+			messagesForPrompt[0]?.from === "system" ? messagesForPrompt[0] : undefined;
+
+		conv = {
+			_id: convId,
+			model: model.id,
+			title: "New Chat",
+			rootMessageId: messagesForPrompt[0]?.id,
+			messages: messagesForPrompt,
+			preprompt: systemMessage?.content ?? model.preprompt ?? "",
+			createdAt: promptedAt,
+			updatedAt: promptedAt,
+		} as Conversation;
+
+		// throwaway assistant message the streaming closure accumulates into; never
+		// persisted (the browser applies the same updates to its own copy).
+		messageToWriteTo = {
+			id: uuidv4(),
+			from: "assistant",
+			content: "",
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		};
+	} else {
+		// ---- server-state mode: MongoDB-backed (default, HuggingChat) ----
+		// check if the user has access to the conversation
+		const convBeforeCheck = await collections.conversations.findOne({
+			_id: convId,
+			...authCondition(locals),
+		});
+
+		if (convBeforeCheck && !convBeforeCheck.rootMessageId) {
+			const res = await collections.conversations.updateOne(
+				{
+					_id: convId,
+				},
+				{
+					$set: {
+						...convBeforeCheck,
+						...convertLegacyConversation(convBeforeCheck),
+					},
+				}
+			);
+
+			if (!res.acknowledged) {
+				error(500, "Failed to convert conversation");
+			}
+		}
+
+		const loadedConv = await collections.conversations.findOne({
+			_id: convId,
+			...authCondition(locals),
+		});
+
+		if (!loadedConv) {
+			error(404, "Conversation not found");
+		}
+		conv = loadedConv;
+
+		// A new generation invalidates any stale stop marker for this conversation.
+		// The abortedGenerations collection is the cross-pod abort channel:
+		// stop-generating upserts a marker, and the watcher in the stream below
+		// polls it. Clearing stale markers here — before the client could possibly
+		// issue a stop for THIS generation (its fetch has not returned yet) — means
+		// any marker observed later was meant for us, with no wall-clock comparison
+		// between pods needed. Markers younger than the grace window are preserved:
+		// they belong to a stop for a still-winding-down generation in this same
+		// conversation (e.g. issued from another tab), whose watcher must get the
+		// chance to observe them; aborted generations consume their marker on
+		// shutdown, so a fresh marker is never a stale one.
+		await collections.abortedGenerations.deleteOne({
+			conversationId: convId,
+			updatedAt: { $lt: new Date(Date.now() - STOP_MARKER_GRACE_MS) },
+		});
+
+		// register the event for ratelimiting
+		await collections.messageEvents.insertOne({
+			type: "message",
+			userId,
+			createdAt: new Date(),
+			expiresAt: new Date(Date.now() + 60_000),
+			ip: getClientAddress(),
+		});
+
+		if (usageLimits?.messagesPerMinute) {
+			// check if the user is rate limited
+			const nEvents = Math.max(
+				await collections.messageEvents.countDocuments({
+					userId,
+					type: "message",
+					expiresAt: { $gt: new Date() },
+				}),
+				await collections.messageEvents.countDocuments({
+					ip: getClientAddress(),
+					type: "message",
+					expiresAt: { $gt: new Date() },
+				})
+			);
+			if (nEvents > usageLimits.messagesPerMinute) {
+				error(429, ERROR_MESSAGES.rateLimited);
+			}
+		}
+
+		if (usageLimits?.messages && conv.messages.length > usageLimits.messages) {
+			error(
+				429,
+				`This conversation has more than ${usageLimits.messages} messages. Start a new one to continue`
+			);
+		}
+
+		// fetch the model
+		model = models.find((m) => m.id === conv.model);
+
+		if (!model) {
+			error(410, "Model not available anymore");
+		}
+
+		const inputFiles = await Promise.all(
+			form
+				.getAll("files")
+				.filter((entry): entry is File => entry instanceof File && entry.size > 0)
+				.map(async (file) => {
+					const [type, ...name] = file.name.split(";");
+
+					return {
+						type: z.literal("base64").or(z.literal("hash")).parse(type),
+						value: await file.text(),
+						mime: file.type,
+						name: name.join(";"),
+					};
+				})
+		);
+
+		// each file is either:
+		// base64 string requiring upload to the server
+		// hash pointing to an existing file
+		const hashFiles = inputFiles?.filter((file) => file.type === "hash") ?? [];
+		const b64Files =
+			inputFiles
+				?.filter((file) => file.type !== "hash")
+				.map((file) => {
+					const blob = Buffer.from(file.value, "base64");
+					return new File([blob], file.name, { type: file.mime });
+				}) ?? [];
+
+		// check sizes
+		// todo: make configurable
+		if (b64Files.some((file) => file.size > 10 * 1024 * 1024)) {
+			error(413, "File too large, should be <10MB");
+		}
+
+		const uploadedFiles = await Promise.all(b64Files.map((file) => uploadFile(file, conv))).then(
+			(files) => [...files, ...hashFiles]
+		);
+
+		if (isRetry && messageId) {
+			// two cases, if we're retrying a user message with a newPrompt set,
+			// it means we're editing a user message
+			// if we're retrying on an assistant message, newPrompt cannot be set
+			// it means we're retrying the last assistant message for a new answer
+
+			const messageToRetry = conv.messages.find((message) => message.id === messageId);
+
+			if (!messageToRetry) {
+				error(404, "Message not found");
+			}
+
+			if (messageToRetry.from === "user" && newPrompt) {
+				// add a sibling to this message from the user, with the alternative prompt
+				// add a children to that sibling, where we can write to
+				const newUserMessageId = addSibling(
+					conv,
+					{
+						from: "user",
+						content: newPrompt,
+						files: uploadedFiles,
+						createdAt: new Date(),
+						updatedAt: new Date(),
+					},
+					messageId
+				);
+				messageToWriteToId = addChildren(
+					conv,
+					{
+						from: "assistant",
+						content: "",
+						createdAt: new Date(),
+						updatedAt: new Date(),
+					},
+					newUserMessageId
+				);
+				messagesForPrompt = buildSubtree(conv, newUserMessageId);
+			} else if (messageToRetry.from === "assistant") {
+				// we're retrying an assistant message, to generate a new answer
+				// just add a sibling to the assistant answer where we can write to
+				messageToWriteToId = addSibling(
+					conv,
+					{ from: "assistant", content: "", createdAt: new Date(), updatedAt: new Date() },
+					messageId
+				);
+				messagesForPrompt = buildSubtree(conv, messageId);
+				messagesForPrompt.pop(); // don't need the latest assistant message in the prompt since we're retrying it
+			}
+		} else {
+			// just a normal linear conversation, so we add the user message
+			// and the blank assistant message back to back
+			const newUserMessageId = addChildren(
 				conv,
 				{
 					from: "user",
-					content: newPrompt,
+					content: newPrompt ?? "",
 					files: uploadedFiles,
 					createdAt: new Date(),
 					updatedAt: new Date(),
 				},
 				messageId
 			);
+
 			messageToWriteToId = addChildren(
 				conv,
 				{
@@ -303,63 +418,36 @@ export async function POST({ request, locals, params, getClientAddress }) {
 				},
 				newUserMessageId
 			);
+			// build the prompt from the user message
 			messagesForPrompt = buildSubtree(conv, newUserMessageId);
-		} else if (messageToRetry.from === "assistant") {
-			// we're retrying an assistant message, to generate a new answer
-			// just add a sibling to the assistant answer where we can write to
-			messageToWriteToId = addSibling(
-				conv,
-				{ from: "assistant", content: "", createdAt: new Date(), updatedAt: new Date() },
-				messageId
-			);
-			messagesForPrompt = buildSubtree(conv, messageId);
-			messagesForPrompt.pop(); // don't need the latest assistant message in the prompt since we're retrying it
 		}
-	} else {
-		// just a normal linear conversation, so we add the user message
-		// and the blank assistant message back to back
-		const newUserMessageId = addChildren(
-			conv,
-			{
-				from: "user",
-				content: newPrompt ?? "",
-				files: uploadedFiles,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			},
-			messageId
+
+		const found = conv.messages.find((message) => message.id === messageToWriteToId);
+		if (!found) {
+			error(500, "Failed to create message");
+		}
+		messageToWriteTo = found;
+
+		if (messagesForPrompt.length === 0) {
+			error(500, "Failed to create prompt");
+		}
+
+		// update the conversation with the new messages
+		await collections.conversations.updateOne(
+			{ _id: convId },
+			{ $set: { messages: conv.messages, title: conv.title, updatedAt: new Date() } }
 		);
-
-		messageToWriteToId = addChildren(
-			conv,
-			{
-				from: "assistant",
-				content: "",
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			},
-			newUserMessageId
-		);
-		// build the prompt from the user message
-		messagesForPrompt = buildSubtree(conv, newUserMessageId);
 	}
 
-	const messageToWriteTo = conv.messages.find((message) => message.id === messageToWriteToId);
-	if (!messageToWriteTo) {
-		error(500, "Failed to create message");
+	if (!model) {
+		error(410, "Model not available anymore");
 	}
-	if (messagesForPrompt.length === 0) {
-		error(500, "Failed to create prompt");
-	}
-
-	// update the conversation with the new messages
-	await collections.conversations.updateOne(
-		{ _id: convId },
-		{ $set: { messages: conv.messages, title: conv.title, updatedAt: new Date() } }
-	);
 
 	let doneStreaming = false;
 	let clientDetached = false;
+	// hoisted so cancel() can abort the upstream generation when the browser
+	// disconnects in client-state mode (no DB-backed stop marker exists there).
+	let streamAbortController: AbortController | undefined;
 
 	let lastTokenTimestamp: undefined | Date = undefined;
 	let firstTokenObserved = false;
@@ -369,6 +457,8 @@ export async function POST({ request, locals, params, getClientAddress }) {
 	const metricsLabels = { model: metricsModelId };
 
 	const persistConversation = async () => {
+		// client-state mode persists in the browser, not server-side
+		if (isClient) return;
 		const messagesForSave = conv.messages.map((msg) => {
 			const filteredUpdates =
 				msg.updates
@@ -400,6 +490,7 @@ export async function POST({ request, locals, params, getClientAddress }) {
 		async start(controller) {
 			const conversationKey = convId.toString();
 			const ctrl = new AbortController();
+			streamAbortController = ctrl;
 			abortRegistry.register(conversationKey, ctrl);
 
 			// Cross-pod and pre-first-token abort path. The in-process registry
@@ -409,25 +500,30 @@ export async function POST({ request, locals, params, getClientAddress }) {
 			// Poll the marker collection directly and abort the upstream request
 			// as soon as a stop is observed. Pre-flight deleted any stale marker,
 			// so marker presence means a stop for this generation.
-			const abortMarkerWatcher = setInterval(() => {
-				collections.abortedGenerations
-					.findOne({ conversationId: convId })
-					.then((marker) => {
-						if (marker && !ctrl.signal.aborted) {
-							logger.info(
-								{ conversationId: conversationKey },
-								"Stop marker observed; aborting generation"
-							);
-							ctrl.abort();
-						}
-						if (marker || ctrl.signal.aborted) {
-							clearInterval(abortMarkerWatcher);
-						}
-					})
-					.catch(() => {
-						// transient DB error; the next tick retries
-					});
-			}, 300);
+			//
+			// Client-state mode has no DB marker: the browser stops a generation by
+			// aborting its fetch, which triggers cancel() below.
+			const abortMarkerWatcher = isClient
+				? undefined
+				: setInterval(() => {
+						collections.abortedGenerations
+							.findOne({ conversationId: convId })
+							.then((marker) => {
+								if (marker && !ctrl.signal.aborted) {
+									logger.info(
+										{ conversationId: conversationKey },
+										"Stop marker observed; aborting generation"
+									);
+									ctrl.abort();
+								}
+								if (marker || ctrl.signal.aborted) {
+									if (abortMarkerWatcher) clearInterval(abortMarkerWatcher);
+								}
+							})
+							.catch(() => {
+								// transient DB error; the next tick retries
+							});
+					}, 300);
 
 			let finalAnswerReceived = false;
 			let abortedByUser = false;
@@ -486,10 +582,14 @@ export async function POST({ request, locals, params, getClientAddress }) {
 					// reasoning trace), keep the existing title rather than blanking it.
 					const sanitizedTitle = stripReasoningBlocks(event.title).trim();
 					conv.title = sanitizedTitle || conv.title;
-					await collections.conversations.updateOne(
-						{ _id: convId },
-						{ $set: { title: conv?.title, updatedAt: new Date() } }
-					);
+					// client-state mode persists the title in the browser (it consumes
+					// this same Title update); server mode writes it through to MongoDB.
+					if (!isClient) {
+						await collections.conversations.updateOne(
+							{ _id: convId },
+							{ $set: { title: conv?.title, updatedAt: new Date() } }
+						);
+					}
 				}
 
 				// Set the final text and the interrupted flag
@@ -619,9 +719,13 @@ export async function POST({ request, locals, params, getClientAddress }) {
 			// the message persists exactly as the user last saw it instead of
 			// "growing back" on the next sync.
 			const emitInterruptedFinalAnswer = async () => {
-				const marker = await collections.abortedGenerations
-					.findOne({ conversationId: convId })
-					.catch(() => null);
+				// No DB stop marker in client-state mode; the browser owns the stop
+				// point and clamps its own copy when it aborts the fetch.
+				const marker = isClient
+					? null
+					: await collections.abortedGenerations
+							.findOne({ conversationId: convId })
+							.catch(() => null);
 				messageToWriteTo.content = clampStoppedContent({
 					content: messageToWriteTo.content,
 					initialLength: initialMessageContent.length,
@@ -636,11 +740,17 @@ export async function POST({ request, locals, params, getClientAddress }) {
 			};
 
 			try {
-				// Fetch user settings once for all overrides and billing org
-				const userSettings = await collections.settings.findOne(authCondition(locals));
+				// Resolve the per-model overrides. In client-state mode the browser
+				// already resolved them from its local settings and sent them in the
+				// request; in server mode we read the user's `settings` document.
+				const userSettings = isClient
+					? undefined
+					: await collections.settings.findOne(authCondition(locals));
 
 				// Add billing organization to locals for the endpoint to use
-				locals.billingOrganization = userSettings?.billingOrganization;
+				locals.billingOrganization = isClient
+					? clientOverrides?.billingOrganization
+					: userSettings?.billingOrganization;
 
 				const ctx: TextGenerationContext = {
 					model,
@@ -655,22 +765,36 @@ export async function POST({ request, locals, params, getClientAddress }) {
 					// On HuggingChat capability comes from the upstream router, so any stored
 					// per-user overrides are ignored — existing entries don't keep applying.
 					forceMultimodal:
-						!config.isHuggingChat && Boolean(userSettings?.multimodalOverrides?.[model.id]),
-					forceTools: !config.isHuggingChat && Boolean(userSettings?.toolsOverrides?.[model.id]),
+						!config.isHuggingChat &&
+						Boolean(
+							isClient
+								? clientOverrides?.forceMultimodal
+								: userSettings?.multimodalOverrides?.[model.id]
+						),
+					forceTools:
+						!config.isHuggingChat &&
+						Boolean(
+							isClient ? clientOverrides?.forceTools : userSettings?.toolsOverrides?.[model.id]
+						),
 					// Inference provider preference (HuggingChat only, skip for router models)
 					provider:
 						config.isHuggingChat && !model.isRouter
-							? userSettings?.providerOverrides?.[model.id]
+							? isClient
+								? clientOverrides?.provider
+								: userSettings?.providerOverrides?.[model.id]
 							: undefined,
 					// Thinking-effort override (only forwarded for reasoning-capable models;
 					// per-user override can force-enable on self-hosted)
-					reasoningEffort:
-						(userSettings?.reasoningOverrides?.[model.id] ?? model.supportsReasoning)
+					reasoningEffort: isClient
+						? clientOverrides?.reasoningEffort
+						: (userSettings?.reasoningOverrides?.[model.id] ?? model.supportsReasoning)
 							? userSettings?.reasoningEffortOverrides?.[model.id]
 							: undefined,
 					// Artifacts aren't provider-determined, so the per-model user
 					// override applies on HuggingChat too
-					artifactsOverride: userSettings?.artifactsOverrides?.[model.id],
+					artifactsOverride: isClient
+						? clientOverrides?.artifactsOverride
+						: userSettings?.artifactsOverrides?.[model.id],
 					locals,
 					abortController: ctrl,
 				};
@@ -743,7 +867,7 @@ export async function POST({ request, locals, params, getClientAddress }) {
 			}
 
 			await persistConversation();
-			clearInterval(abortMarkerWatcher);
+			if (abortMarkerWatcher) clearInterval(abortMarkerWatcher);
 			abortRegistry.unregister(conversationKey, ctrl);
 
 			// Consume the stop marker once the stop has been honored and the
@@ -751,8 +875,8 @@ export async function POST({ request, locals, params, getClientAddress }) {
 			// leftover would trip the watcher of the next generation; consuming
 			// here (instead of unconditionally deleting in pre-flight) keeps
 			// markers alive long enough for concurrent in-flight generations to
-			// observe them.
-			if (abortedByUser) {
+			// observe them. No marker exists in client-state mode.
+			if (abortedByUser && !isClient) {
 				await collections.abortedGenerations
 					.deleteOne({ conversationId: convId })
 					.catch((err) => logger.warn(err, "Failed to consume stop marker"));
@@ -767,12 +891,26 @@ export async function POST({ request, locals, params, getClientAddress }) {
 		async cancel() {
 			if (doneStreaming) return;
 			clientDetached = true;
-			await persistConversation();
+			// In client-state mode the browser is the only owner of this generation;
+			// when it disconnects, stop burning tokens upstream (there is no
+			// background persistence and no DB stop marker to rely on). In server
+			// mode the generation continues in the background and is persisted.
+			if (isClient) {
+				streamAbortController?.abort();
+			} else {
+				await persistConversation();
+			}
 		},
 	});
 
 	if (metricsEnabled && metrics) {
 		metrics.model.messagesTotal.inc(metricsLabels);
+		// In client-state mode there is no POST /conversation to count new
+		// conversations, so count one here on the first turn (no prior assistant
+		// reply in the prompt subtree).
+		if (isClient && !messagesForPrompt.some((m) => m.from === "assistant")) {
+			metrics.model.conversationsTotal.inc(metricsLabels);
+		}
 	}
 
 	// Todo: maybe we should wait for the message to be saved before ending the response - in case of errors

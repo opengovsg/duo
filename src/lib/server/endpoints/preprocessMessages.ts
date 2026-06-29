@@ -1,4 +1,4 @@
-import type { Message } from "$lib/types/Message";
+import type { Message, MessageFile } from "$lib/types/Message";
 import type { EndpointMessage } from "./endpoints";
 import { downloadFile } from "../files/downloadFile";
 import type { ObjectId } from "mongodb";
@@ -16,9 +16,16 @@ export async function preprocessMessages(
 async function downloadFiles(messages: Message[], convId: ObjectId): Promise<EndpointMessage[]> {
 	return Promise.all(
 		messages.map<Promise<EndpointMessage>>((message) =>
-			Promise.all((message.files ?? []).map((file) => downloadFile(file.value, convId))).then(
-				(files) => ({ ...message, files })
-			)
+			Promise.all(
+				(message.files ?? []).map((file) =>
+					// In client-state mode files arrive inline as base64 (there is no GridFS
+					// to resolve a hash against), so pass them straight through. "hash" files
+					// (server mode) are fetched from GridFS as base64.
+					file.type === "base64"
+						? Promise.resolve(file as MessageFile & { type: "base64" })
+						: downloadFile(file.value, convId)
+				)
+			).then((files) => ({ ...message, files }))
 		)
 	);
 }
