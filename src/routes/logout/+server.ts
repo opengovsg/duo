@@ -1,18 +1,10 @@
 import { base } from "$app/paths";
-import { collections } from "$lib/server/database";
 import { redirect } from "@sveltejs/kit";
-import { config } from "$lib/server/config";
-import { sameSite, secure } from "$lib/server/auth";
+import { clearSessionCookie } from "$lib/server/auth";
 
-export async function POST({ locals, cookies }) {
-	await collections.sessions.deleteOne({ sessionId: locals.sessionId });
-
-	cookies.delete(config.COOKIE_NAME, {
-		path: "/",
-		// So that it works inside the space's iframe
-		sameSite,
-		secure,
-		httpOnly: true,
-	});
+export async function POST({ cookies }) {
+	// Stateless sessions: clearing the sealed cookie is the entire logout.
+	// The client clears its IndexedDB conversation cache separately.
+	clearSessionCookie(cookies);
 	return redirect(302, `${base}/`);
 }

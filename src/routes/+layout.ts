@@ -4,13 +4,6 @@ import { getConfigManager } from "$lib/utils/PublicConfig.svelte";
 import type { GETModelsResponse, FeatureFlags } from "$lib/server/api/types";
 import { base } from "$app/paths";
 
-interface ConversationListItem {
-	_id: { toString(): string };
-	title: string;
-	updatedAt: Date | string;
-	model?: string;
-}
-
 interface UserInfo {
 	id: string;
 	username?: string;
@@ -49,54 +42,54 @@ export const load = async ({ fetch, url }) => {
 	// inlined in the SSR payload so the client has it before any onMount fires,
 	// allowing +layout.svelte to pre-populate the mcpServers store synchronously
 	// and eliminate the mcpServersLoaded gate delay on first message.
-	const [settings, models, user, publicConfig, featureFlags, conversationsData, mcpBaseServers] =
-		(await Promise.all([
-			client.user.settings.get().then(handleResponse),
-			client.models.get().then(handleResponse),
-			client.user.get().then(handleResponse),
-			client["public-config"].get().then(handleResponse),
-			client["feature-flags"].get().then(handleResponse),
-			client.conversations.get({ query: { p: 0 } }).then(handleResponse),
-			fetch(`${url.origin}${base}/api/mcp/servers`)
-				.then((r) => (r.ok ? r.json() : []))
-				.catch(() => []),
-		])) as [
-			SettingsResponse,
-			GETModelsResponse,
-			UserInfo | null,
-			Record<string, unknown>,
-			FeatureFlags,
-			{ conversations: ConversationListItem[]; hasMore: boolean },
-			import("$lib/types/Tool").MCPServer[],
-		];
+	// Database-free: conversations + settings live in the browser (IndexedDB /
+	// localStorage), so they are NOT fetched from the server here. Identity still
+	// comes from the server (sealed session cookie) via /api/v2/user.
+	const [models, user, publicConfig, featureFlags, mcpBaseServers] = (await Promise.all([
+		client.models.get().then(handleResponse),
+		client.user.get().then(handleResponse),
+		client["public-config"].get().then(handleResponse),
+		client["feature-flags"].get().then(handleResponse),
+		fetch(`${url.origin}${base}/api/mcp/servers`)
+			.then((r) => (r.ok ? r.json() : []))
+			.catch(() => []),
+	])) as [
+		GETModelsResponse,
+		UserInfo | null,
+		Record<string, unknown>,
+		FeatureFlags,
+		import("$lib/types/Tool").MCPServer[],
+	];
 
 	const defaultModel = models[0];
 
-	const { conversations: rawConversations } = conversationsData;
-	const conversations = rawConversations.map((conv: ConversationListItem) => {
-		const trimmedTitle = conv.title.trim();
-
-		conv.title = trimmedTitle;
-
-		return {
-			id: conv._id.toString(),
-			title: conv.title,
-			model: conv.model ?? defaultModel?.id,
-			updatedAt: new Date(conv.updatedAt),
-		} satisfies ConvSidebar;
-	});
+	// Client-side default settings; the settings store hydrates over these from
+	// localStorage on the client.
+	const settings: SettingsResponse = {
+		welcomeModalSeen: false,
+		welcomeModalSeenAt: null,
+		shareConversationsWithModelAuthors: true,
+		activeModel: defaultModel?.id ?? "",
+		streamingMode: "smooth",
+		directPaste: false,
+		hapticsEnabled: true,
+		customPrompts: {},
+		customPromptsEnabled: {},
+		multimodalOverrides: {},
+		toolsOverrides: {},
+		artifactsOverrides: {},
+		hidePromptExamples: {},
+		providerOverrides: {},
+		reasoningEffortOverrides: {},
+		reasoningOverrides: {},
+	};
 
 	return {
-		conversations,
+		conversations: [] as ConvSidebar[],
 		models,
 		oldModels: [],
 		user,
-		settings: {
-			...settings,
-			welcomeModalSeenAt: settings.welcomeModalSeenAt
-				? new Date(settings.welcomeModalSeenAt)
-				: null,
-		},
+		settings,
 		publicConfig: getConfigManager(publicConfig as Record<`PUBLIC_${string}`, string>),
 		mcpBaseServers,
 		...featureFlags,

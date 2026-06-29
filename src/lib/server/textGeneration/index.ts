@@ -44,7 +44,6 @@ async function* textGenerationWithoutTitle(
 	};
 
 	const { conv, messages } = ctx;
-	const convId = conv._id;
 
 	// Artifacts are opt-in per model (supportsArtifacts in the MODELS overrides),
 	// with a per-model user override from the model settings page
@@ -53,7 +52,7 @@ async function* textGenerationWithoutTitle(
 			? injectArtifactsPrompt(conv.preprompt)
 			: conv.preprompt;
 
-	const processedMessages = await preprocessMessages(messages, convId);
+	const processedMessages = await preprocessMessages(messages);
 
 	// Try MCP tool flow first; fall back to default generation if not selected/available
 	try {

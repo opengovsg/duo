@@ -4,7 +4,6 @@ import {
 	MessageUpdateType,
 	type MessageUpdate,
 } from "$lib/types/MessageUpdate";
-import { AbortedGenerations } from "../abortedGenerations";
 import type { TextGenerationContext } from "./types";
 import type { EndpointMessage } from "../endpoints/endpoints";
 import { generateFromDefaultEndpoint } from "../generateFromDefaultEndpoint";
@@ -20,7 +19,6 @@ export async function* generate(
 		conv,
 		messages,
 		assistant,
-		promptedAt,
 		forceMultimodal,
 		provider,
 		reasoningEffort,
@@ -90,11 +88,7 @@ export async function* generate(
 		if (output.generated_text) {
 			// If an abort happened just before final output, stop here and let
 			// the caller emit an interrupted final answer with partial text.
-			const abortTime = AbortedGenerations.getInstance().getAbortTime(conv._id.toString());
-			if (abortController.signal.aborted || (abortTime && abortTime > promptedAt)) {
-				if (!abortController.signal.aborted) {
-					abortController.abort();
-				}
+			if (abortController.signal.aborted) {
 				break;
 			}
 
@@ -244,13 +238,7 @@ export async function* generate(
 		}
 
 		// abort check
-		const date = AbortedGenerations.getInstance().getAbortTime(conv._id.toString());
-
-		if (date && date > promptedAt) {
-			logger.info(`Aborting generation for conversation ${conv._id}`);
-			if (!abortController.signal.aborted) {
-				abortController.abort();
-			}
+		if (abortController.signal.aborted) {
 			break;
 		}
 

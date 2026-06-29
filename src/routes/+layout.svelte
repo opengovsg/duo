@@ -249,8 +249,7 @@
 	// Shared conversation views define their own social preview tags
 	// (see SharePreviewTags.svelte), so skip the generic ones there
 	let isSharedConversationView = $derived(
-		page.route.id === "/r/[id]" ||
-			(page.route.id === "/conversation/[id]" && page.params.id?.length === 7)
+		page.route.id === "/conversation/[id]" && page.params.id?.length === 7
 	);
 </script>
 
