@@ -13,6 +13,11 @@ import { logger } from "$lib/server/logger.js";
 // curl -X POST "http://localhost:5173/chat/admin/export" -H "Authorization: Bearer <ADMIN_API_SECRET>" -H "Content-Type: application/json" -d '{"model": "OpenAssistant/oasst-sft-6-llama-30b-xor"}'
 
 export async function POST({ request }) {
+	// Client-state mode keeps no conversations server-side, so there is nothing to
+	// export. This content-based feature is server-storage only.
+	if (config.isStateClient) {
+		error(501, "Conversation export is unavailable in client-state mode (no server storage).");
+	}
 	if (!config.PARQUET_EXPORT_DATASET || !config.PARQUET_EXPORT_HF_TOKEN) {
 		error(500, "Parquet export is not configured.");
 	}

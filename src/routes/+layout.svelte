@@ -25,6 +25,7 @@
 	import BackgroundGenerationPoller from "$lib/components/BackgroundGenerationPoller.svelte";
 	import { requireAuthUser } from "$lib/utils/auth";
 	import { createConversationsStore } from "$lib/stores/conversations.svelte";
+	import { conversationRepository } from "$lib/repositories/ConversationRepository";
 	import { useIsOnline } from "$lib/stores/isOnline.svelte";
 
 	let { data = $bindable(), children } = $props();
@@ -35,11 +36,15 @@
 	const client = useAPIClient();
 
 	const convsStore = createConversationsStore();
-	convsStore.init(data.conversations);
-
-	$effect(() => {
+	if (publicConfig.isStateClient) {
+		// Client-state mode: the sidebar lives in IndexedDB, not the server.
+		if (browser) void convsStore.initFromCache();
+	} else {
 		convsStore.init(data.conversations);
-	});
+		$effect(() => {
+			convsStore.init(data.conversations);
+		});
+	}
 
 	const isOnline = useIsOnline();
 
@@ -64,6 +69,15 @@
 	}
 
 	async function deleteConversation(id: string) {
+		if (publicConfig.isStateClient) {
+			// Client-state mode: delete from IndexedDB, no server record exists.
+			await conversationRepository.removeConversationDetail(id);
+			convsStore.remove(id);
+			if (page.params.id === id) {
+				await goto(`${base}/`);
+			}
+			return;
+		}
 		client
 			.conversations({ id })
 			.delete()
@@ -82,6 +96,11 @@
 	}
 
 	async function editConversationTitle(id: string, title: string) {
+		if (publicConfig.isStateClient) {
+			convsStore.update(id, { title });
+			await conversationRepository.renameConversationDetail(id, title);
+			return;
+		}
 		client
 			.conversations({ id })
 			.patch({ title })

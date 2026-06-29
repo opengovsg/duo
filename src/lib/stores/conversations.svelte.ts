@@ -50,6 +50,15 @@ class ConversationsStore {
 	}
 
 	/**
+	 * Seed the list from IndexedDB. Used in client-state ("DB-free") mode where
+	 * the browser is the source of record and there is no server list to seed from.
+	 */
+	async initFromCache(): Promise<void> {
+		if (!browser) return;
+		this.#list = await conversationRepository.getConversations();
+	}
+
+	/**
 	 * Apply a partial patch to a single conversation by id.
 	 * Silently ignores unknown ids (e.g. race between title update and delete).
 	 */
@@ -57,16 +66,20 @@ class ConversationsStore {
 		const idx = this.#list.findIndex((c) => String(c.id) === id);
 		if (idx === -1) return;
 		this.#list[idx] = { ...this.#list[idx], ...patch };
+		// Write through so the sidebar survives reload in client-state mode.
+		void conversationRepository.setConversations(this.#list);
 	}
 
 	/** Remove a conversation by id (optimistic delete). */
 	remove(id: string): void {
 		this.#list = this.#list.filter((c) => String(c.id) !== id);
+		void conversationRepository.setConversations(this.#list);
 	}
 
 	/** Prepend a new conversation to the top of the list. */
 	prepend(conv: ConvSidebar): void {
 		this.#list = [conv, ...this.#list];
+		void conversationRepository.setConversations(this.#list);
 	}
 
 	/**

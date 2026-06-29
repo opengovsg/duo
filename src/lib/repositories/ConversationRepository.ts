@@ -127,6 +127,23 @@ export class ConversationRepository {
 		return promisifyRequest(store.get(id));
 	}
 
+	/** Update the stored title of a conversation detail, if present. */
+	async renameConversationDetail(id: string, title: string): Promise<void> {
+		if (!browser) return;
+		const existing = await this.getConversationDetail(id);
+		if (!existing) return;
+		await this.setConversationDetail(id, {
+			title,
+			model: existing.model,
+			modelId: existing.modelId,
+			updatedAt: existing.updatedAt,
+			messages: existing.messages,
+			preprompt: existing.preprompt,
+			rootMessageId: existing.rootMessageId,
+			shared: existing.shared,
+		});
+	}
+
 	/** Remove a conversation detail by id. */
 	async removeConversationDetail(id: string): Promise<void> {
 		if (!browser) return;
