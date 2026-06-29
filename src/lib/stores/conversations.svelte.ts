@@ -23,17 +23,9 @@
 import { browser } from "$app/environment";
 import { getContext, setContext } from "svelte";
 import type { ConvSidebar } from "$lib/types/ConvSidebar";
-import { useAPIClient, handleResponse } from "$lib/APIClient";
 import { conversationRepository } from "$lib/repositories/ConversationRepository";
 
 export const CONVERSATIONS_CONTEXT_KEY = "conversationsStore";
-
-interface ConversationListItem {
-	_id: { toString(): string };
-	title: string;
-	updatedAt: Date | string;
-	model?: string;
-}
 
 class ConversationsStore {
 	#list = $state<ConvSidebar[]>([]);
@@ -83,29 +75,15 @@ class ConversationsStore {
 	}
 
 	/**
-	 * Re-fetch GET /api/v2/conversations?p=0 and reconcile with the local list.
-	 * Performs a last-write-wins replace so updatedAt ordering reflects the server.
-	 * No-op on the server (browser guard).
+	 * Reload the sidebar list from IndexedDB. In client-state ("DB-free") mode the
+	 * browser is the source of record, so a refresh re-reads the locally persisted
+	 * list (e.g. after a background generation updates a title/updatedAt) rather
+	 * than hitting the server. No-op on the server (browser guard).
 	 */
 	async refresh(): Promise<void> {
 		if (!browser) return;
 		try {
-			const client = useAPIClient();
-			const data = (await client.conversations.get({ query: { p: 0 } }).then(handleResponse)) as {
-				conversations: ConversationListItem[];
-				hasMore: boolean;
-			};
-
-			const defaultModel = undefined; // caller can patch model separately if needed
-			const freshList: ConvSidebar[] = data.conversations.map((conv) => ({
-				id: conv._id.toString(),
-				title: conv.title.trim(),
-				model: conv.model ?? defaultModel,
-				updatedAt: new Date(conv.updatedAt),
-			}));
-			this.#list = freshList;
-			// Persist the server-confirmed list to IndexedDB.
-			void conversationRepository.setConversations(freshList);
+			this.#list = await conversationRepository.getConversations();
 		} catch (err) {
 			// Non-fatal: keep the existing list rather than blanking the sidebar.
 			console.error("[conversationsStore] refresh failed", err);

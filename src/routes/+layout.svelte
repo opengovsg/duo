@@ -18,7 +18,6 @@
 	import WelcomeModal from "$lib/components/WelcomeModal.svelte";
 	import ExpandNavigation from "$lib/components/ExpandNavigation.svelte";
 	import { setContext } from "svelte";
-	import { handleResponse, useAPIClient } from "$lib/APIClient";
 	import { isAborted } from "$lib/stores/isAborted";
 	import { isPro } from "$lib/stores/isPro";
 	import BackgroundGenerationPoller from "$lib/components/BackgroundGenerationPoller.svelte";
@@ -32,18 +31,10 @@
 	setContext("publicConfig", data.publicConfig);
 
 	const publicConfig = data.publicConfig;
-	const client = useAPIClient();
 
 	const convsStore = createConversationsStore();
-	if (publicConfig.isStateClient) {
-		// Client-state mode: the sidebar lives in IndexedDB, not the server.
-		if (browser) void convsStore.initFromCache();
-	} else {
-		convsStore.init(data.conversations);
-		$effect(() => {
-			convsStore.init(data.conversations);
-		});
-	}
+	// Client-state mode: the sidebar lives in IndexedDB, not the server.
+	if (browser) void convsStore.initFromCache();
 
 	const isOnline = useIsOnline();
 
@@ -68,49 +59,17 @@
 	}
 
 	async function deleteConversation(id: string) {
-		if (publicConfig.isStateClient) {
-			// Client-state mode: delete from IndexedDB, no server record exists.
-			await conversationRepository.removeConversationDetail(id);
-			convsStore.remove(id);
-			if (page.params.id === id) {
-				await goto(`${base}/`);
-			}
-			return;
+		// Client-state mode: delete from IndexedDB, no server record exists.
+		await conversationRepository.removeConversationDetail(id);
+		convsStore.remove(id);
+		if (page.params.id === id) {
+			await goto(`${base}/`);
 		}
-		client
-			.conversations({ id })
-			.delete()
-			.then(handleResponse)
-			.then(async () => {
-				convsStore.remove(id);
-
-				if (page.params.id === id) {
-					await goto(`${base}/`, { invalidateAll: true });
-				}
-			})
-			.catch((err) => {
-				console.error(err);
-				$error = String(err);
-			});
 	}
 
 	async function editConversationTitle(id: string, title: string) {
-		if (publicConfig.isStateClient) {
-			convsStore.update(id, { title });
-			await conversationRepository.renameConversationDetail(id, title);
-			return;
-		}
-		client
-			.conversations({ id })
-			.patch({ title })
-			.then(handleResponse)
-			.then(async () => {
-				convsStore.update(id, { title });
-			})
-			.catch((err) => {
-				console.error(err);
-				$error = String(err);
-			});
+		convsStore.update(id, { title });
+		await conversationRepository.renameConversationDetail(id, title);
 	}
 
 	function closeWelcomeModal() {

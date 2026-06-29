@@ -98,28 +98,11 @@ export function useAPIClient({
 		: `${origin ?? `http://localhost:5173`}${base}/api/v2`;
 
 	return {
-		conversations: Object.assign(
-			// client.conversations({ id: "..." }) — returns endpoint for /conversations/:id
-			(params: { id: string }) => ({
-				...endpoint(fetcher, `${baseUrl}/conversations/${params.id}`),
-				message: (msgParams: { messageId: string }) =>
-					endpoint(fetcher, `${baseUrl}/conversations/${params.id}/message/${msgParams.messageId}`),
-			}),
-			// client.conversations.get(), .delete()
-			{
-				...endpoint(fetcher, `${baseUrl}/conversations`),
-				"import-share": endpoint(fetcher, `${baseUrl}/conversations/import-share`),
-			}
-		),
 		user: {
 			...endpoint(fetcher, `${baseUrl}/user`),
-			settings: endpoint(fetcher, `${baseUrl}/user/settings`),
-			reports: endpoint(fetcher, `${baseUrl}/user/reports`),
-			"billing-orgs": endpoint(fetcher, `${baseUrl}/user/billing-orgs`),
 		},
 		models: {
 			...endpoint(fetcher, `${baseUrl}/models`),
-			old: endpoint(fetcher, `${baseUrl}/models/old`),
 		},
 		spaces: {
 			deploy: endpoint(fetcher, `${baseUrl}/spaces/deploy`),
@@ -129,7 +112,6 @@ export function useAPIClient({
 		debug: {
 			config: endpoint(fetcher, `${baseUrl}/debug/config`),
 		},
-		export: endpoint(fetcher, `${baseUrl}/export`),
 	};
 }
 
