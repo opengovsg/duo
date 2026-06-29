@@ -16,7 +16,9 @@
 	import file2base64 from "$lib/utils/file2base64";
 	import { addChildren } from "$lib/utils/tree/addChildren";
 	import { addSibling } from "$lib/utils/tree/addSibling";
+	import { buildSubtree } from "$lib/utils/tree/buildSubtree";
 	import { fetchMessageUpdates, resolveStreamingMode } from "$lib/utils/messageUpdates";
+	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 	import { v4 } from "uuid";
 	import { useSettingsStore } from "$lib/stores/settings.js";
 	import { enabledServers, mcpServersLoaded } from "$lib/stores/mcpServers";
@@ -46,6 +48,11 @@
 	// Obtain the conversations store during component init (context must be read
 	// synchronously, not inside async callbacks or event handlers).
 	const convsStore = useConversationsStore();
+
+	// Client-state ("DB-free") mode: the browser owns the conversation tree and
+	// persists it in IndexedDB; the generation endpoint runs statelessly.
+	const publicConfig = usePublicConfig();
+	const isClientState = publicConfig.isStateClient;
 
 	let convId = $derived(page.params.id ?? "");
 	let pending = $state(false);
@@ -123,6 +130,44 @@
 		return alternatives;
 	}
 
+	// Resolve the per-model settings overrides that server mode reads from the
+	// `settings` collection. In client-state mode they travel with the request.
+	function buildClientOverrides(modelId: string) {
+		const s = get(settings);
+		const currentModel = findCurrentModel(data.models, data.oldModels, modelId);
+		const reasoningEnabled = s.reasoningOverrides?.[modelId] ?? currentModel?.supportsReasoning;
+		return {
+			forceMultimodal: s.multimodalOverrides?.[modelId] || undefined,
+			forceTools: s.toolsOverrides?.[modelId] || undefined,
+			provider: s.providerOverrides?.[modelId] || undefined,
+			reasoningEffort: reasoningEnabled ? s.reasoningEffortOverrides?.[modelId] : undefined,
+			artifactsOverride: s.artifactsOverrides?.[modelId],
+			billingOrganization: s.billingOrganization,
+		};
+	}
+
+	// Commit the browser-owned conversation to IndexedDB and reflect it in the
+	// sidebar. Replaces the server invalidation/refresh used in server mode.
+	async function persistConversationLocally() {
+		if (!browser || !isClientState || !convId) return;
+		const title = convsStore.list.find((c) => c.id === convId)?.title ?? data.title;
+		await conversationRepository.setConversationDetail(convId, {
+			title,
+			model: data.model,
+			updatedAt: new Date().toISOString(),
+			messages: superjson.stringify(messages),
+			preprompt: data.preprompt,
+			rootMessageId,
+			shared: data.shared,
+			modelId: data.modelId,
+		});
+		if (convsStore.list.some((c) => c.id === convId)) {
+			convsStore.update(convId, { updatedAt: new Date(), title });
+		} else {
+			convsStore.prepend({ id: convId, title, model: data.model, updatedAt: new Date() });
+		}
+	}
+
 	// this function is used to send new message to the backends
 	async function writeMessage({
 		prompt,
@@ -157,6 +202,10 @@
 
 			let messageToWriteToId: Message["id"] | undefined = undefined;
 			// used for building the prompt, subtree of the conversation that goes from the latest message to the root
+			// In client-state mode we build the prompt subtree here (the server is
+			// stateless): track which leaf to build it from.
+			let promptLeafId: Message["id"] | undefined = undefined;
+			let popPromptLeaf = false;
 
 			if (isRetry && messageId) {
 				// two cases, if we're retrying a user message with a newPrompt set,
@@ -193,6 +242,7 @@
 						{ from: "assistant", content: "" },
 						newUserMessageId
 					);
+					promptLeafId = newUserMessageId;
 				} else if (messageToRetry?.from === "assistant") {
 					// we're retrying an assistant message, to generate a new answer
 					// just add a sibling to the assistant answer where we can write to
@@ -204,6 +254,9 @@
 						{ from: "assistant", content: "" },
 						messageId
 					);
+					// prompt is the path up to (but not including) the assistant being retried
+					promptLeafId = messageId;
+					popPromptLeaf = true;
 				}
 			} else {
 				// just a normal linear conversation, so we add the user message
@@ -236,6 +289,7 @@
 					},
 					newUserMessageId
 				);
+				promptLeafId = newUserMessageId;
 			}
 
 			const userMessage = messages.find((message) => message.id === messageId);
@@ -263,6 +317,19 @@
 				});
 			}
 
+			// In client-state mode build the root→leaf prompt subtree the stateless
+			// server will generate from (with inline base64 attachments).
+			let clientState: Parameters<typeof fetchMessageUpdates>[1]["clientState"];
+			if (isClientState && promptLeafId) {
+				const subtree = buildSubtree({ messages, rootMessageId }, promptLeafId);
+				if (popPromptLeaf) subtree.pop();
+				clientState = {
+					model: data.model,
+					messages: subtree as Message[],
+					overrides: buildClientOverrides(data.model),
+				};
+			}
+
 			const messageUpdatesIterator = await fetchMessageUpdates(
 				convId,
 				{
@@ -280,6 +347,7 @@
 					})),
 					timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 					streamingMode,
+					clientState,
 				},
 				messageUpdatesAbortController.signal
 			).catch((err) => {
@@ -488,36 +556,44 @@
 			activeGenerationId = undefined;
 			$loading = false;
 			pending = false;
-			// Wait for the stop request to complete before refreshing data,
-			// so the abort marker is durably written before we poll for the
-			// terminal state below.
-			if (stopRequestPromise) {
-				await stopRequestPromise.catch(() => {});
-				stopRequestPromise = undefined;
-			}
-			const stoppedHere = stopRequestedFor === convId;
-			// Only re-run the loads that actually need fresh data: the
-			// conversation page (new messages) and the sidebar list
-			// (updated title / updatedAt via client-owned store refresh).
-			// Avoids the 5 redundant bootstrap requests (models, settings, user,
-			// public-config, feature-flags) that a full invalidateAll() would trigger.
-			// When this finally runs because beforeNavigate aborted the stream
-			// ($isAborted set without a stop click), invalidating would cancel
-			// that very navigation (e.g. the "New Chat" click that triggered
-			// the abort) before the router even exposes it via `navigating`.
-			// Skip the refresh: the destination page loads its own data.
-			const abortedByNavigation = $isAborted && !stoppedHere;
-			if (!abortedByNavigation) {
-				// stop-generating returns as soon as the abort marker is written,
-				// NOT when the generating pod has persisted interrupted:true.
-				// Invalidating right away would load a non-terminal snapshot that
-				// wipes the optimistic interrupted flag and shows a stuck
-				// streaming state. Wait (bounded) for the persisted state to
-				// become terminal before refreshing.
-				if (stoppedHere) {
-					await waitForTerminalPersist(convId);
+
+			if (isClientState) {
+				// Browser owns the state: commit to IndexedDB instead of invalidating
+				// + refetching from the server. The local `messages` already hold the
+				// terminal state the loop produced.
+				await persistConversationLocally();
+			} else {
+				// Wait for the stop request to complete before refreshing data,
+				// so the abort marker is durably written before we poll for the
+				// terminal state below.
+				if (stopRequestPromise) {
+					await stopRequestPromise.catch(() => {});
+					stopRequestPromise = undefined;
 				}
-				await Promise.all([safeInvalidate(UrlDependency.Conversation), convsStore.refresh()]);
+				const stoppedHere = stopRequestedFor === convId;
+				// Only re-run the loads that actually need fresh data: the
+				// conversation page (new messages) and the sidebar list
+				// (updated title / updatedAt via client-owned store refresh).
+				// Avoids the 5 redundant bootstrap requests (models, settings, user,
+				// public-config, feature-flags) that a full invalidateAll() would trigger.
+				// When this finally runs because beforeNavigate aborted the stream
+				// ($isAborted set without a stop click), invalidating would cancel
+				// that very navigation (e.g. the "New Chat" click that triggered
+				// the abort) before the router even exposes it via `navigating`.
+				// Skip the refresh: the destination page loads its own data.
+				const abortedByNavigation = $isAborted && !stoppedHere;
+				if (!abortedByNavigation) {
+					// stop-generating returns as soon as the abort marker is written,
+					// NOT when the generating pod has persisted interrupted:true.
+					// Invalidating right away would load a non-terminal snapshot that
+					// wipes the optimistic interrupted flag and shows a stuck
+					// streaming state. Wait (bounded) for the persisted state to
+					// become terminal before refreshing.
+					if (stoppedHere) {
+						await waitForTerminalPersist(convId);
+					}
+					await Promise.all([safeInvalidate(UrlDependency.Conversation), convsStore.refresh()]);
+				}
 			}
 		}
 	}
@@ -563,6 +639,13 @@
 		// removing the background poller and preventing $loading re-enable.
 		if (lastAssistant) {
 			lastAssistant.interrupted = true;
+		}
+
+		// Client-state mode: aborting the fetch (above) stops the stateless
+		// generation; there is no server-side stop marker. writeMessage's finally
+		// persists the interrupted state locally.
+		if (isClientState) {
+			return;
 		}
 
 		const sendStopRequest = async () => {
@@ -629,8 +712,11 @@
 
 		// Don't resume tracking for stale snapshots: a generation that has gone
 		// this long without a DB write died with its pod and will never finish.
+		// Client-state mode has no server-side background generation to resume.
 		const streaming =
-			isConversationGenerationActive(messages) && !isGenerationStale(data.updatedAt);
+			!isClientState &&
+			isConversationGenerationActive(messages) &&
+			!isGenerationStale(data.updatedAt);
 		if (streaming) {
 			addBackgroundGeneration({ id: convId, startedAt: Date.now() });
 			$loading = true;

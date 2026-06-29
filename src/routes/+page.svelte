@@ -11,6 +11,10 @@
 	import { storePendingFiles } from "$lib/utils/pendingFiles";
 	import { useSettingsStore } from "$lib/stores/settings.js";
 	import { useConversationsStore } from "$lib/stores/conversations.svelte";
+	import { conversationRepository } from "$lib/repositories/ConversationRepository";
+	import { generateObjectId } from "$lib/utils/generateObjectId";
+	import { v4 as uuidv4 } from "uuid";
+	import superjson from "superjson";
 	import { findCurrentModel } from "$lib/utils/models";
 	import { sanitizeUrlParam } from "$lib/utils/urlParams";
 	import { onMount, tick } from "svelte";
@@ -44,6 +48,47 @@
 			} else {
 				model = data.models[0].id;
 			}
+
+			const preprompt =
+				($settings.customPromptsEnabled?.[$settings.activeModel] ?? true)
+					? $settings.customPrompts[$settings.activeModel]
+					: "";
+
+			// Client-state ("DB-free") mode: mint the conversation in the browser and
+			// persist it to IndexedDB; there is no server record.
+			if (publicConfig.isStateClient) {
+				const conversationId = generateObjectId();
+				const systemMessageId = uuidv4();
+				const messages = [
+					{
+						id: systemMessageId,
+						from: "system" as const,
+						content: preprompt ?? "",
+						createdAt: new Date(),
+						updatedAt: new Date(),
+						ancestors: [],
+						children: [],
+					},
+				];
+				await conversationRepository.setConversationDetail(conversationId, {
+					title: "New Chat",
+					model,
+					updatedAt: new Date().toISOString(),
+					messages: superjson.stringify(messages),
+					preprompt: preprompt ?? "",
+					rootMessageId: systemMessageId,
+					shared: false,
+					modelId: model,
+				});
+				convsStore.prepend({ id: conversationId, title: "New Chat", model, updatedAt: new Date() });
+
+				const pendingFilesNonce = files.length > 0 ? storePendingFiles(files) : undefined;
+				await goto(`${base}/conversation/${conversationId}`, {
+					state: { pendingMessage: message, pendingFilesNonce },
+				});
+				return;
+			}
+
 			const res = await fetch(`${base}/conversation`, {
 				method: "POST",
 				headers: {
@@ -51,10 +96,7 @@
 				},
 				body: JSON.stringify({
 					model,
-					preprompt:
-						($settings.customPromptsEnabled?.[$settings.activeModel] ?? true)
-							? $settings.customPrompts[$settings.activeModel]
-							: "",
+					preprompt,
 				}),
 			});
 

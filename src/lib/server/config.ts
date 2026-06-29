@@ -45,6 +45,19 @@ class ConfigManager {
 		return this.get("PUBLIC_APP_ASSETS") === "huggingchat";
 	}
 
+	/**
+	 * "client" when per-user state (conversations, settings) lives in the browser
+	 * and the server persists nothing per-user (DB-free, self-hosted). "server"
+	 * (default) keeps the MongoDB-backed behavior used by HuggingChat.
+	 */
+	get stateStorage(): "server" | "client" {
+		return this.get("PUBLIC_STATE_STORAGE") === "client" ? "client" : "server";
+	}
+
+	get isStateClient() {
+		return this.stateStorage === "client";
+	}
+
 	async checkForUpdates() {
 		if (await this.isConfigStale()) {
 			await this.updateConfig();

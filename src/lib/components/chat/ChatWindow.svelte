@@ -106,6 +106,9 @@
 	const publicConfig = usePublicConfig();
 	let canShare = $derived(
 		publicConfig.isHuggingChat &&
+			// Sharing needs a server-side record; client-state mode replaces it with
+			// conversation export/import.
+			!publicConfig.isStateClient &&
 			Boolean(page.params?.id) &&
 			page.route.id?.startsWith("/conversation/")
 	);

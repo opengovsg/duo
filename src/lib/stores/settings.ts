@@ -1,8 +1,32 @@
 import { browser } from "$app/environment";
 import { base } from "$app/paths";
+import { env as publicEnv } from "$env/dynamic/public";
 import type { ReasoningEffort, StreamingMode } from "$lib/types/Settings";
 import { getContext, setContext } from "svelte";
 import { type Writable, writable, get } from "svelte/store";
+
+// In client-state ("DB-free") mode settings live in localStorage, not the server.
+const isClientState = publicEnv.PUBLIC_STATE_STORAGE === "client";
+const SETTINGS_LOCAL_KEY = "chat-ui-settings";
+
+function persistSettingsLocally(settings: unknown) {
+	if (!browser) return;
+	try {
+		localStorage.setItem(SETTINGS_LOCAL_KEY, JSON.stringify(settings));
+	} catch {
+		// quota / private-mode errors are non-fatal
+	}
+}
+
+function loadSettingsLocally(): Record<string, unknown> | undefined {
+	if (!browser) return undefined;
+	try {
+		const raw = localStorage.getItem(SETTINGS_LOCAL_KEY);
+		return raw ? (JSON.parse(raw) as Record<string, unknown>) : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 type SettingsStore = {
 	shareConversationsWithModelAuthors: boolean;
@@ -39,7 +63,11 @@ export function useSettingsStore() {
 }
 
 export function createSettingsStore(initialValue: Omit<SettingsStore, "recentlySaved">) {
-	const baseStore = writable({ ...initialValue, recentlySaved: false });
+	// Client-state mode: hydrate from localStorage over the server defaults so
+	// the user's saved preferences survive reloads without a database.
+	const seeded =
+		isClientState && browser ? { ...initialValue, ...(loadSettingsLocally() ?? {}) } : initialValue;
+	const baseStore = writable({ ...seeded, recentlySaved: false });
 
 	let timeoutId: NodeJS.Timeout;
 	let showSavedOnNextSync = false;
@@ -54,13 +82,17 @@ export function createSettingsStore(initialValue: Omit<SettingsStore, "recentlyS
 			showSavedOnNextSync = true; // User edit, should show "Saved"
 			clearTimeout(timeoutId);
 			timeoutId = setTimeout(async () => {
-				await fetch(`${base}/settings`, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify(get(baseStore)),
-				});
+				if (isClientState) {
+					persistSettingsLocally(get(baseStore));
+				} else {
+					await fetch(`${base}/settings`, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify(get(baseStore)),
+					});
+				}
 
 				if (showSavedOnNextSync) {
 					// set savedRecently to true for 3s
@@ -110,13 +142,17 @@ export function createSettingsStore(initialValue: Omit<SettingsStore, "recentlyS
 		if (browser) {
 			clearTimeout(timeoutId);
 			timeoutId = setTimeout(async () => {
-				await fetch(`${base}/settings`, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify(get(baseStore)),
-				});
+				if (isClientState) {
+					persistSettingsLocally(get(baseStore));
+				} else {
+					await fetch(`${base}/settings`, {
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify(get(baseStore)),
+					});
+				}
 
 				if (showSavedOnNextSync) {
 					baseStore.update((s) => ({
@@ -142,16 +178,20 @@ export function createSettingsStore(initialValue: Omit<SettingsStore, "recentlyS
 		}));
 
 		if (browser) {
-			await fetch(`${base}/settings`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					...get(baseStore),
-					...settings,
-				}),
-			});
+			if (isClientState) {
+				persistSettingsLocally({ ...get(baseStore), ...settings });
+			} else {
+				await fetch(`${base}/settings`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						...get(baseStore),
+						...settings,
+					}),
+				});
+			}
 		}
 	}
 

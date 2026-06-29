@@ -1,4 +1,4 @@
-import type { MessageFile } from "$lib/types/Message";
+import type { Message, MessageFile } from "$lib/types/Message";
 import {
 	type MessageUpdate,
 	type MessageToolUpdate,
@@ -30,6 +30,23 @@ type MessageUpdateRequestOptions = {
 	// User's IANA timezone (e.g. "America/New_York")
 	timezone?: string;
 	streamingMode?: StreamingMode;
+	// ---- client-state ("DB-free") mode only ----
+	// When set, the server runs statelessly: it does not read/write the
+	// conversation from a database but generates from the context sent here.
+	clientState?: {
+		model: string;
+		// root→leaf prompt subtree the browser already built (includes the system
+		// message and the new user message), with inline base64 file attachments.
+		messages: Message[];
+		overrides?: {
+			forceMultimodal?: boolean;
+			forceTools?: boolean;
+			provider?: string;
+			reasoningEffort?: "low" | "medium" | "high";
+			artifactsOverride?: boolean;
+			billingOrganization?: string;
+		};
+	};
 };
 
 type ChunkDetector = (buffer: string) => string | null;
@@ -66,6 +83,12 @@ export async function fetchMessageUpdates(
 		selectedMcpServerNames: opts.selectedMcpServerNames,
 		selectedMcpServers: opts.selectedMcpServers,
 		timezone: opts.timezone,
+		// client-state mode: the server generates from this context and persists nothing
+		...(opts.clientState && {
+			model: opts.clientState.model,
+			messages: opts.clientState.messages,
+			overrides: opts.clientState.overrides,
+		}),
 	});
 
 	opts.files?.forEach((file) => {
