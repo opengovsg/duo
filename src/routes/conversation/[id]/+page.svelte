@@ -5,8 +5,6 @@
 	import { onMount, untrack } from "svelte";
 	import { page } from "$app/state";
 	import { beforeNavigate, replaceState } from "$app/navigation";
-	import { UrlDependency } from "$lib/types/UrlDependency";
-	import { safeInvalidate } from "$lib/utils/safeInvalidate";
 	import { base } from "$app/paths";
 	import { ERROR_MESSAGES, error } from "$lib/stores/errors";
 	import { findCurrentModel } from "$lib/utils/models";
@@ -36,7 +34,6 @@
 	import { streamStart } from "$lib/utils/haptics";
 	import { requireAuthUser } from "$lib/utils/auth.js";
 	import { isConversationGenerationActive, isGenerationStale } from "$lib/utils/generationState";
-	import { useAPIClient, handleResponse } from "$lib/APIClient";
 	import SharePreviewTags from "$lib/components/SharePreviewTags.svelte";
 
 	// IndexedDB persistence for offline fallback
@@ -557,63 +554,10 @@
 			$loading = false;
 			pending = false;
 
-			if (isClientState) {
-				// Browser owns the state: commit to IndexedDB instead of invalidating
-				// + refetching from the server. The local `messages` already hold the
-				// terminal state the loop produced.
-				await persistConversationLocally();
-			} else {
-				// Wait for the stop request to complete before refreshing data,
-				// so the abort marker is durably written before we poll for the
-				// terminal state below.
-				if (stopRequestPromise) {
-					await stopRequestPromise.catch(() => {});
-					stopRequestPromise = undefined;
-				}
-				const stoppedHere = stopRequestedFor === convId;
-				// Only re-run the loads that actually need fresh data: the
-				// conversation page (new messages) and the sidebar list
-				// (updated title / updatedAt via client-owned store refresh).
-				// Avoids the 5 redundant bootstrap requests (models, settings, user,
-				// public-config, feature-flags) that a full invalidateAll() would trigger.
-				// When this finally runs because beforeNavigate aborted the stream
-				// ($isAborted set without a stop click), invalidating would cancel
-				// that very navigation (e.g. the "New Chat" click that triggered
-				// the abort) before the router even exposes it via `navigating`.
-				// Skip the refresh: the destination page loads its own data.
-				const abortedByNavigation = $isAborted && !stoppedHere;
-				if (!abortedByNavigation) {
-					// stop-generating returns as soon as the abort marker is written,
-					// NOT when the generating pod has persisted interrupted:true.
-					// Invalidating right away would load a non-terminal snapshot that
-					// wipes the optimistic interrupted flag and shows a stuck
-					// streaming state. Wait (bounded) for the persisted state to
-					// become terminal before refreshing.
-					if (stoppedHere) {
-						await waitForTerminalPersist(convId);
-					}
-					await Promise.all([safeInvalidate(UrlDependency.Conversation), convsStore.refresh()]);
-				}
-			}
-		}
-	}
-
-	// Poll the conversation API until the last assistant message is terminal
-	// (interrupted, final answer, or error persisted), bounded at ~3.2s. Used
-	// after a Stop so the post-stop refresh reads settled data instead of a
-	// mid-abort snapshot.
-	async function waitForTerminalPersist(id: string) {
-		const client = useAPIClient();
-		for (let attempt = 0; attempt < 8; attempt++) {
-			try {
-				const conversation = (await client.conversations({ id }).get().then(handleResponse)) as {
-					messages: Message[];
-				};
-				if (!isConversationGenerationActive(conversation.messages)) return;
-			} catch {
-				return; // cannot verify; fall through to the single refresh
-			}
-			await new Promise((resolve) => setTimeout(resolve, 400));
+			// Browser owns the state: commit to IndexedDB instead of invalidating
+			// + refetching from the server. The local `messages` already hold the
+			// terminal state the loop produced.
+			await persistConversationLocally();
 		}
 	}
 
