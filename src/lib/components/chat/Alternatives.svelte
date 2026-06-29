@@ -20,8 +20,6 @@
 	}: Props = $props();
 
 	let currentIdx = $derived(alternatives.findIndex((id) => id === message.id));
-
-	// API client removed as deletion UI is commented out
 </script>
 
 <div
@@ -47,31 +45,4 @@
 	>
 		<CarbonChevronRight class="text-sm" />
 	</button>
-	<!-- {#if !loading && message.children}
-		<button
-			class="hidden group-hover/navbranch:block"
-			onclick={() => {
-				if (confirm("Are you sure you want to delete this branch?")) {
-					client
-						.conversations({ id: page.params.id })
-						.message({ messageId: message.id })
-						.delete()
-						.then(handleResponse)
-						.then(async () => {
-							await invalidate(UrlDependency.Conversation);
-						})
-						.catch((err) => {
-							console.error(err);
-							$error = String(err);
-						});
-				}
-			}}
-		>
-			<div
-				class="flex items-center justify-center text-xs text-gray-400 hover:text-gray-800 dark:text-gray-500 dark:hover:text-gray-200"
-			>
-				<CarbonTrashCan />
-			</div>
-		</button>
-	{/if} -->
 </div>
