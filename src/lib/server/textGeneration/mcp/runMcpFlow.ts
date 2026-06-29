@@ -26,7 +26,6 @@ import { prepareMessagesWithFiles } from "$lib/server/textGeneration/utils/prepa
 import { makeImageProcessor } from "$lib/server/endpoints/images";
 import { createStreamWithoutContentSafety } from "$lib/server/endpoints/openai/contentSafetyRetry";
 import { logger } from "$lib/server/logger";
-import { AbortedGenerations } from "$lib/server/abortedGenerations";
 
 export type RunMcpFlowContext = Pick<
 	TextGenerationContext,
@@ -55,28 +54,15 @@ export async function* runMcpFlow({
 	locals,
 	preprompt,
 	abortSignal,
-	abortController,
-	promptedAt,
 }: RunMcpFlowContext & {
 	preprompt?: string;
 	abortSignal?: AbortSignal;
 	abortController?: AbortController;
 	promptedAt?: Date;
 }): AsyncGenerator<MessageUpdate, McpFlowResult, undefined> {
-	// Helper to check if generation should be aborted via DB polling
-	// Also triggers the abort controller to cancel active streams/requests
-	const checkAborted = (): boolean => {
-		if (abortSignal?.aborted) return true;
-		const abortTime = AbortedGenerations.getInstance().getAbortTime(conv._id.toString());
-		if (abortTime && promptedAt && abortTime > promptedAt) {
-			// Trigger the abort controller to cancel active streams
-			if (abortController && !abortController.signal.aborted) {
-				abortController.abort();
-			}
-			return true;
-		}
-		return false;
-	};
+	// Helper to check if generation should be aborted. The browser aborts the
+	// fetch to stop a generation (no DB stop marker in the DB-free server).
+	const checkAborted = (): boolean => abortSignal?.aborted ?? false;
 	// Start from env-configured servers
 	let servers = getMcpServers();
 	try {

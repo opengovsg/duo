@@ -46,7 +46,7 @@ export async function GET({ url, locals, cookies, request, getClientAddress }) {
 
 	const csrfToken = Buffer.from(state, "base64").toString("utf-8");
 
-	const validatedToken = await validateAndParseCsrfToken(csrfToken, locals.sessionId);
+	const validatedToken = await validateAndParseCsrfToken(csrfToken);
 
 	if (!validatedToken) {
 		throw error(403, "Invalid or expired CSRF token");
