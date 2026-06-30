@@ -152,7 +152,7 @@ async function listServerTools(
 	opts: { signal?: AbortSignal } = {}
 ): Promise<ListedTool[]> {
 	const url = new URL(server.url);
-	const client = new Client({ name: "chat-ui-mcp", version: "0.1.0" });
+	const client = new Client({ name: "duo-mcp", version: "0.1.0" });
 	try {
 		try {
 			const transport = new StreamableHTTPClientTransport(url, {

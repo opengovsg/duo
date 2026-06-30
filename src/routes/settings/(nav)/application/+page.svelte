@@ -121,7 +121,7 @@
 			class="flex flex-col items-start justify-between text-xl font-semibold text-gray-800 dark:text-gray-200"
 		>
 			<a
-				href={`https://github.com/huggingface/chat-ui/commit/${publicConfig.PUBLIC_COMMIT_SHA}`}
+				href={`https://github.com/opengovsg/duo/commit/${publicConfig.PUBLIC_COMMIT_SHA}`}
 				target="_blank"
 				rel="noreferrer"
 				class="text-sm font-light text-gray-500 dark:text-gray-400"
@@ -293,24 +293,10 @@
 		<div class="mt-6 flex flex-col gap-2 self-start text-[13px]">
 			{#if publicConfig.isHuggingChat}
 				<a
-					href="https://github.com/huggingface/chat-ui"
+					href="https://github.com/opengovsg/duo"
 					target="_blank"
 					class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
 					><CarbonLogoGithub class="mr-1.5 shrink-0 text-sm " /> Github repository</a
-				>
-				<a
-					href="https://huggingface.co/spaces/huggingchat/chat-ui/discussions/764"
-					target="_blank"
-					rel="noreferrer"
-					class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
-					><CarbonArrowUpRight class="mr-1.5 shrink-0 text-sm " /> Share your feedback on HuggingChat</a
-				>
-				<a
-					href="https://huggingface.co/models/inference"
-					target="_blank"
-					rel="noreferrer"
-					class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
-					><CarbonArrowUpRight class="mr-1.5 shrink-0 text-sm " /> Compare Inference Providers</a
 				>
 				<a
 					href="{base}/privacy"

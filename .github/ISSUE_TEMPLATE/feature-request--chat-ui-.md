@@ -1,6 +1,6 @@
 ---
-name: Feature Request (chat-ui)
-about: Suggest new features to be added to chat-ui
+name: Feature Request (duo)
+about: Suggest new features to be added to duo
 title: ""
 labels: enhancement
 assignees: ""

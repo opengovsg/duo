@@ -33,7 +33,7 @@ export async function initServer(): Promise<void> {
 
 	if (config.EXPOSE_API) {
 		logger.warn(
-			"The EXPOSE_API flag has been deprecated. The API is now required for chat-ui to work."
+			"The EXPOSE_API flag has been deprecated. The API is now required for duo to work."
 		);
 	}
 }

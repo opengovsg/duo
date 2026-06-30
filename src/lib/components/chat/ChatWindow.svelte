@@ -184,7 +184,7 @@
 				pastedLongContent = false;
 			}, 1000);
 			const pastedFile = new File([textContent], "Pasted Content", {
-				type: "application/vnd.chatui.clipboard",
+				type: "application/vnd.duo.clipboard",
 			});
 
 			files = [...files, pastedFile];

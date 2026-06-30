@@ -107,7 +107,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		try {
 			logger.info({}, `[MCP Health] Trying HTTP transport for ${url}`);
 			client = new Client({
-				name: "chat-ui-health-check",
+				name: "duo-health-check",
 				version: "1.0.0",
 			});
 
@@ -173,7 +173,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			try {
 				logger.info({}, `[MCP Health] Trying SSE transport for ${url}`);
 				client = new Client({
-					name: "chat-ui-health-check",
+					name: "duo-health-check",
 					version: "1.0.0",
 				});
 

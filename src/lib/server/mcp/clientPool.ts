@@ -73,7 +73,7 @@ export async function getClient(server: McpServerConfig, signal?: AbortSignal): 
 	}
 
 	let firstError: unknown;
-	const client = new Client({ name: "chat-ui-mcp", version: "0.1.0" });
+	const client = new Client({ name: "duo-mcp", version: "0.1.0" });
 	const url = new URL(server.url);
 	// Pooled clients outlive the request that created them, so never bind the per-request
 	// abort signal to the transport. Per-call cancellation goes through RequestOptions instead.

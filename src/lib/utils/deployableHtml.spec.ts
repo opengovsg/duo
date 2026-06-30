@@ -29,7 +29,7 @@ describe("buildDeployableHtml", () => {
 		for (const [kind, content] of kinds) {
 			const out = buildDeployableHtml(kind, content);
 			expect(out, kind).not.toContain("parent.postMessage");
-			expect(out, kind).not.toContain("chatui.preview");
+			expect(out, kind).not.toContain("duo.preview");
 		}
 	});
 

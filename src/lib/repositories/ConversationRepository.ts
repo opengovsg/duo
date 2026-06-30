@@ -14,7 +14,7 @@
 import { browser } from "$app/environment";
 import type { ConvSidebar } from "$lib/types/ConvSidebar";
 
-const DB_NAME = "chat-ui-cache";
+const DB_NAME = "duo-cache";
 const DB_VERSION = 1;
 
 /** Lightweight serialisable shape for the sidebar list (mirrors ConvSidebar). */

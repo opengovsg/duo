@@ -267,7 +267,7 @@
 		if (!raw || typeof raw !== "object") return;
 		const data = raw as Partial<PreviewMessage>;
 		if (data.channel !== previewChannel) return;
-		if (data.type === "chatui.preview.openLink") {
+		if (data.type === "duo.preview.openLink") {
 			// Only honor link messages backed by a real user gesture (clicks inside
 			// the iframe propagate activation to ancestor frames); artifact scripts
 			// must not be able to pop the confirm without one
@@ -276,7 +276,7 @@
 			externalLinkUrl = parseExternalUrl(data.detail?.href) ?? null;
 			return;
 		}
-		if (data.type !== "chatui.preview.error") return;
+		if (data.type !== "duo.preview.error") return;
 		const detail = (data.detail ?? {}) as { message?: unknown; stack?: string };
 		errors = [...errors, { message: String(detail.message ?? "Error"), stack: detail.stack }];
 	}

@@ -72,7 +72,7 @@
 	}
 
 	const isPlainText = (mime: string) =>
-		mime === "application/vnd.chatui.clipboard" || matchesAllowed(mime, TEXT_MIME_ALLOWLIST);
+		mime === "application/vnd.duo.clipboard" || matchesAllowed(mime, TEXT_MIME_ALLOWLIST);
 
 	let isClickable = $derived(isImage(file.mime) || isPlainText(file.mime));
 </script>
@@ -101,7 +101,7 @@
 					<CarbonDocument />
 					<h3 class="text-lg font-semibold">{file.name}</h3>
 				</div>
-				{#if file.mime === "application/vnd.chatui.clipboard"}
+				{#if file.mime === "application/vnd.duo.clipboard"}
 					<p class="text-sm text-gray-500">
 						If you prefer to inject clipboard content directly in the chat, you can disable this
 						feature in the
@@ -123,17 +123,17 @@
 						<pre
 							class="w-full pt-0 text-xs wrap-break-word whitespace-pre-wrap"
 							class:font-sans={file.mime === "text/plain" ||
-								file.mime === "application/vnd.chatui.clipboard"}
+								file.mime === "application/vnd.duo.clipboard"}
 							class:font-mono={file.mime !== "text/plain" &&
-								file.mime !== "application/vnd.chatui.clipboard"}>{result}</pre>
+								file.mime !== "application/vnd.duo.clipboard"}>{result}</pre>
 					{/await}
 				{:else}
 					<pre
 						class="w-full pt-0 text-xs wrap-break-word whitespace-pre-wrap"
 						class:font-sans={file.mime === "text/plain" ||
-							file.mime === "application/vnd.chatui.clipboard"}
+							file.mime === "application/vnd.duo.clipboard"}
 						class:font-mono={file.mime !== "text/plain" &&
-							file.mime !== "application/vnd.chatui.clipboard"}>{atob(file.value)}</pre>
+							file.mime !== "application/vnd.duo.clipboard"}>{atob(file.value)}</pre>
 				{/if}
 			</div>
 		{/if}
@@ -198,7 +198,7 @@
 					<dd class="text-sm">
 						{truncateMiddle(file.name, 28)}
 					</dd>
-					{#if file.mime === "application/vnd.chatui.clipboard"}
+					{#if file.mime === "application/vnd.duo.clipboard"}
 						<dt class="text-xs text-gray-400">Clipboard source</dt>
 					{:else}
 						<dt class="text-xs text-gray-400">{file.mime}</dt>

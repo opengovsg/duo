@@ -45,7 +45,7 @@ describe("iron-session auth", () => {
 		});
 
 		// the cookie value is opaque (sealed), not the plaintext token
-		const sealed = cookies.get("hf-chat");
+		const sealed = cookies.get("duo");
 		expect(sealed).toBeTruthy();
 		expect(sealed).not.toContain("tok-abc");
 
@@ -66,7 +66,7 @@ describe("iron-session auth", () => {
 
 	it("returns no user for a tampered / unsealable cookie", async () => {
 		const cookies = makeCookies();
-		cookies.set("hf-chat", "not-a-valid-seal", {} as never);
+		cookies.set("duo", "not-a-valid-seal", {} as never);
 		const { user } = await authenticateRequest(new Headers(), cookies, url);
 		expect(user).toBeUndefined();
 	});
@@ -78,12 +78,12 @@ describe("iron-session auth", () => {
 			// expired, and no refresh token -> cannot refresh (no network call)
 			oauth: { accessToken: "tok-old", expiresAt: Date.now() - 1_000 },
 		});
-		expect(cookies.get("hf-chat")).toBeTruthy();
+		expect(cookies.get("duo")).toBeTruthy();
 
 		const { user } = await authenticateRequest(new Headers(), cookies, url);
 		expect(user).toBeUndefined();
 		// the stale cookie is removed
-		expect(cookies.get("hf-chat")).toBeUndefined();
+		expect(cookies.get("duo")).toBeUndefined();
 	});
 
 	it("supports an identity-only session (no oauth token)", async () => {
@@ -98,7 +98,7 @@ describe("iron-session auth", () => {
 		const cookies = makeCookies();
 		await setSessionCookie(cookies, { user: baseUser });
 		clearSessionCookie(cookies);
-		expect(cookies.get("hf-chat")).toBeUndefined();
+		expect(cookies.get("duo")).toBeUndefined();
 	});
 
 	it("tokenSetToOauth maps fields and applies the 1-minute expiry skew", () => {
