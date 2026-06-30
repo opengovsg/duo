@@ -1,17 +1,11 @@
 <script lang="ts">
 	import type { PageData } from "./$types";
-	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 
 	import { base } from "$app/paths";
-	import { page } from "$app/state";
 
-	import CarbonHelpFilled from "~icons/carbon/help-filled";
 	import LucideHammer from "~icons/lucide/hammer";
 	import LucideImage from "~icons/lucide/image";
 	import LucideSettings from "~icons/lucide/settings";
-	import IconFast from "$lib/components/icons/IconFast.svelte";
-	import IconCheap from "$lib/components/icons/IconCheap.svelte";
-	import { PROVIDERS_HUB_ORGS } from "@huggingface/inference";
 	import { useSettingsStore } from "$lib/stores/settings";
 	import { goto } from "$app/navigation";
 	interface Props {
@@ -21,8 +15,6 @@
 	let { data }: Props = $props();
 
 	const settings = useSettingsStore();
-
-	const publicConfig = usePublicConfig();
 
 	// Local filter state for model search (hyphen/space insensitive)
 	let modelFilter = $state("");
@@ -40,52 +32,12 @@
 	);
 </script>
 
-<svelte:head>
-	{#if publicConfig.isHuggingChat}
-		<title>{publicConfig.PUBLIC_APP_NAME} - Models</title>
-		<meta property="og:title" content="{publicConfig.PUBLIC_APP_NAME} - Models" />
-		<meta property="og:type" content="website" />
-		<meta
-			property="og:description"
-			content="Browse {publicConfig.PUBLIC_APP_NAME} available models"
-		/>
-		<meta property="og:url" content={page.url.href} />
-		<meta property="og:image" content="{publicConfig.assetPath}/thumbnail.png" />
-		<meta property="og:image:alt" content="{publicConfig.PUBLIC_APP_NAME} preview" />
-		<meta name="twitter:card" content="summary_large_image" />
-		<meta name="twitter:title" content="{publicConfig.PUBLIC_APP_NAME} - Models" />
-		<meta
-			name="twitter:description"
-			content="Browse {publicConfig.PUBLIC_APP_NAME} available models"
-		/>
-		<meta name="twitter:image" content="{publicConfig.assetPath}/thumbnail.png" />
-		<meta name="twitter:image:alt" content="{publicConfig.PUBLIC_APP_NAME} preview" />
-	{/if}
-</svelte:head>
-
 <div class="scrollbar-custom h-full overflow-y-auto py-12 max-sm:pt-8 md:py-24">
 	<div class="mx-auto flex flex-col px-5 xl:w-240 2xl:w-5xl">
 		<div class="flex items-center">
 			<h1 class="text-xl font-bold sm:text-2xl">Models</h1>
-			{#if publicConfig.isHuggingChat}
-				<a
-					href="https://huggingface.co/docs/inference-providers"
-					class="ml-auto text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
-					target="_blank"
-					aria-label="Hub discussion about models"
-				>
-					<CarbonHelpFilled />
-				</a>
-			{/if}
 		</div>
-		<h2 class="text-gray-500">
-			All models available{#if publicConfig.isHuggingChat}&nbsp;via <a
-					target="_blank"
-					href="https://huggingface.co/inference/models"
-					class="underline decoration-gray-300 hover:decoration-gray-500 dark:decoration-gray-600 dark:hover:decoration-gray-500"
-					>Inference Providers</a
-				>{/if}
-		</h2>
+		<h2 class="text-gray-500">All models available</h2>
 
 		<!-- Filter input -->
 		<input
@@ -151,37 +103,6 @@
 
 						<!-- Icons and badges -->
 						<div class="flex flex-shrink-0 items-center gap-1.5">
-							{#if publicConfig.isHuggingChat && !model.isRouter && $settings.providerOverrides?.[model.id] && $settings.providerOverrides[model.id] !== "auto"}
-								{@const providerOverride = $settings.providerOverrides[model.id]}
-								{@const hubOrg =
-									PROVIDERS_HUB_ORGS[providerOverride as keyof typeof PROVIDERS_HUB_ORGS]}
-								{#if providerOverride === "fastest"}
-									<div
-										title="Provider: Fastest"
-										class="rounded-md bg-gray-100 p-1.5 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-									>
-										<IconFast classNames="size-3 sm:size-3.5" />
-									</div>
-								{:else if providerOverride === "cheapest"}
-									<div
-										title="Provider: Cheapest"
-										class="rounded-md bg-gray-100 p-1.5 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-									>
-										<IconCheap classNames="size-3 sm:size-3.5" />
-									</div>
-								{:else if hubOrg}
-									<div
-										title="Provider: {providerOverride}"
-										class="flex size-[26px] items-center justify-center rounded-md bg-gray-100 p-1 sm:size-[30px] dark:bg-gray-800"
-									>
-										<img
-											src="https://huggingface.co/api/avatars/{hubOrg}"
-											alt={providerOverride}
-											class="size-full rounded-sm"
-										/>
-									</div>
-								{/if}
-							{/if}
 							{#if $settings.toolsOverrides?.[model.id] ?? (model as { supportsTools?: boolean }).supportsTools}
 								<div
 									title="This model supports tool calling (functions)."
