@@ -80,7 +80,7 @@
 		try {
 			const cfg = await client.debug.config.get().then(handleResponse);
 			OPENAI_BASE_URL = (cfg as { OPENAI_BASE_URL?: string }).OPENAI_BASE_URL || null;
-		} catch (e) {
+		} catch {
 			// ignore if debug endpoint is unavailable
 		}
 	});
