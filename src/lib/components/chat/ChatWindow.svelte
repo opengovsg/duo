@@ -31,7 +31,6 @@
 	import { browser } from "$app/environment";
 	import { snapScrollToBottom } from "$lib/actions/snapScrollToBottom";
 	import SystemPromptModal from "../SystemPromptModal.svelte";
-	import ShareConversationModal from "../ShareConversationModal.svelte";
 	import ChatIntroduction from "./ChatIntroduction.svelte";
 	import UploadedFile from "./UploadedFile.svelte";
 	import { useSettingsStore } from "$lib/stores/settings";
@@ -42,7 +41,6 @@
 	import type { RouterFollowUp, RouterExample } from "$lib/constants/routerExamples";
 	import { allBaseServersEnabled, mcpServersLoaded } from "$lib/stores/mcpServers";
 	import { shareModal } from "$lib/stores/shareModal";
-	import IconShare from "$lib/components/icons/IconShare.svelte";
 	import FeatureAnnouncementToast from "../FeatureAnnouncementToast.svelte";
 	import { getActiveAnnouncement } from "$lib/utils/featureAnnouncements";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
@@ -104,14 +102,6 @@
 	let isReadOnly = $derived(!models.some((model) => model.id === currentModel.id));
 
 	const publicConfig = usePublicConfig();
-	let canShare = $derived(
-		publicConfig.isHuggingChat &&
-			// Sharing needs a server-side record; client-state mode replaces it with
-			// conversation export/import.
-			!publicConfig.isStateClient &&
-			Boolean(page.params?.id) &&
-			page.route.id?.startsWith("/conversation/")
-	);
 
 	// Feature announcement toast: home screen only, gone as soon as a chat starts.
 	let featureAnnouncement = $derived(
@@ -141,7 +131,6 @@
 		artifactPanel.maybeAutoOpen(streaming.identifier, streaming.version);
 	});
 
-	let shareModalOpen = $state(false);
 	let editMsdgId: Message["id"] | null = $state(null);
 	let pastedLongContent = $state(false);
 
@@ -297,12 +286,7 @@
 		)
 	);
 
-	const unsubscribeShareModal = shareModal.subscribe((value) => {
-		shareModalOpen = value;
-	});
-
 	onDestroy(() => {
-		unsubscribeShareModal();
 		shareModal.close();
 		if (routerDetailsTimeout) {
 			clearTimeout(routerDetailsTimeout);
@@ -637,23 +621,6 @@
      re-enable pointer events themselves. -->
 <div class="pointer-events-none relative flex min-h-0 min-w-0">
 	<div class="pointer-events-auto relative z-[-1] min-h-0 min-w-0 flex-1">
-		{#if shareModalOpen}
-			<ShareConversationModal open={shareModalOpen} onclose={() => shareModal.close()} />
-		{/if}
-		{#if canShare}
-			<!-- Lives in the chat column (not the layout) so it stays visible when
-                 the artifact panel is open -->
-			<button
-				type="button"
-				class="hidden size-8 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white/90 text-sm font-medium text-gray-700 shadow-xs hover:bg-white/60 hover:text-gray-500 md:absolute md:top-5 md:right-6 md:z-10 md:flex dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:bg-gray-700
-                    {loading ? 'cursor-not-allowed opacity-40' : ''}"
-				onclick={() => shareModal.open()}
-				aria-label="Share conversation"
-				disabled={loading}
-			>
-				<IconShare />
-			</button>
-		{/if}
 		{#if featureAnnouncement && showFeatureAnnouncement}
 			<FeatureAnnouncementToast announcement={featureAnnouncement} />
 		{/if}

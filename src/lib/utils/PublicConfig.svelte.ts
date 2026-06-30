@@ -30,10 +30,6 @@ class PublicConfigManager {
 		return this.#configStore;
 	}
 
-	get isHuggingChat() {
-		return this.#configStore.PUBLIC_APP_ASSETS === "huggingchat";
-	}
-
 	/**
 	 * Always true: this is a database-free build where per-user state lives in the
 	 * browser. Retained as a named accessor so call sites read intent clearly.

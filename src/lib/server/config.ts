@@ -18,10 +18,6 @@ class ConfigManager {
 		this.isInitialized = true;
 	}
 
-	get isHuggingChat() {
-		return this.get("PUBLIC_APP_ASSETS") === "huggingchat";
-	}
-
 	// Kept as a no-op so callers (e.g. the request hook) don't need to branch.
 	async checkForUpdates() {}
 

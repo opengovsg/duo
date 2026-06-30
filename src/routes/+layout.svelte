@@ -18,7 +18,6 @@
 	import ExpandNavigation from "$lib/components/ExpandNavigation.svelte";
 	import { setContext } from "svelte";
 	import { isAborted } from "$lib/stores/isAborted";
-	import { isPro } from "$lib/stores/isPro";
 	import BackgroundGenerationPoller from "$lib/components/BackgroundGenerationPoller.svelte";
 	import { requireAuthUser } from "$lib/utils/auth";
 	import { createConversationsStore } from "$lib/stores/conversations.svelte";
@@ -96,17 +95,6 @@
 
 	onMount(async () => {
 		initWithServers(data.mcpBaseServers ?? []);
-
-		if (publicConfig.isHuggingChat && data.user?.username) {
-			fetch(`https://huggingface.co/api/users/${data.user.username}/overview`)
-				.then((res) => res.json())
-				.then((userData) => {
-					isPro.set(userData.isPro ?? false);
-				})
-				.catch(() => {
-					// keep isPro as null on error
-				});
-		}
 
 		if (page.url.searchParams.has("model")) {
 			await settings
