@@ -1,10 +1,4 @@
-import { base } from "$app/paths";
-
-export async function load({ params, parent, fetch }) {
-	await fetch(`${base}/api/v2/models/${params.model}/subscribe`, {
-		method: "POST",
-	});
-
+export async function load({ params, parent }) {
 	return {
 		settings: await parent().then((data) => ({
 			...data.settings,

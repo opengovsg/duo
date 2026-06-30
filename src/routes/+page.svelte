@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { goto, replaceState } from "$app/navigation";
-	import { base } from "$app/paths";
+	import { replaceState } from "$app/navigation";
 	import { page } from "$app/state";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 
@@ -8,13 +7,9 @@
 
 	import ChatWindow from "$lib/components/chat/ChatWindow.svelte";
 	import { ERROR_MESSAGES, error } from "$lib/stores/errors";
-	import { storePendingFiles } from "$lib/utils/pendingFiles";
 	import { useSettingsStore } from "$lib/stores/settings.js";
 	import { useConversationsStore } from "$lib/stores/conversations.svelte";
-	import { conversationRepository } from "$lib/repositories/ConversationRepository";
-	import { generateObjectId } from "$lib/utils/generateObjectId";
-	import { v4 as uuidv4 } from "uuid";
-	import superjson from "superjson";
+	import { createConversation } from "$lib/utils/createConversation";
 	import { findCurrentModel } from "$lib/utils/models";
 	import { sanitizeUrlParam } from "$lib/utils/urlParams";
 	import { onMount, tick } from "svelte";
@@ -32,111 +27,23 @@
 
 	const settings = useSettingsStore();
 
-	async function createConversation(message: string) {
+	async function startConversation(message: string) {
 		try {
 			$loading = true;
 
 			// check if $settings.activeModel is a valid model
-			// else check if it's an assistant, and use that model
 			// else use the first model
-
 			const validModels = data.models.map((model) => model.id);
-
-			let model;
-			if (validModels.includes($settings.activeModel)) {
-				model = $settings.activeModel;
-			} else {
-				model = data.models[0].id;
-			}
+			const model = validModels.includes($settings.activeModel)
+				? $settings.activeModel
+				: data.models[0].id;
 
 			const preprompt =
 				($settings.customPromptsEnabled?.[$settings.activeModel] ?? true)
 					? $settings.customPrompts[$settings.activeModel]
 					: "";
 
-			// Client-state ("DB-free") mode: mint the conversation in the browser and
-			// persist it to IndexedDB; there is no server record.
-			if (publicConfig.isStateClient) {
-				const conversationId = generateObjectId();
-				const systemMessageId = uuidv4();
-				const messages = [
-					{
-						id: systemMessageId,
-						from: "system" as const,
-						content: preprompt ?? "",
-						createdAt: new Date(),
-						updatedAt: new Date(),
-						ancestors: [],
-						children: [],
-					},
-				];
-				await conversationRepository.setConversationDetail(conversationId, {
-					title: "New Chat",
-					model,
-					updatedAt: new Date().toISOString(),
-					messages: superjson.stringify(messages),
-					preprompt: preprompt ?? "",
-					rootMessageId: systemMessageId,
-					shared: false,
-					modelId: model,
-				});
-				convsStore.prepend({ id: conversationId, title: "New Chat", model, updatedAt: new Date() });
-
-				const pendingFilesNonce = files.length > 0 ? storePendingFiles(files) : undefined;
-				await goto(`${base}/conversation/${conversationId}`, {
-					state: { pendingMessage: message, pendingFilesNonce },
-				});
-				return;
-			}
-
-			const res = await fetch(`${base}/conversation`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					model,
-					preprompt,
-				}),
-			});
-
-			if (!res.ok) {
-				let errorMessage = ERROR_MESSAGES.default;
-				try {
-					const json = await res.json();
-					errorMessage = json.message || errorMessage;
-				} catch {
-					// Response wasn't JSON (e.g., HTML error page)
-					if (res.status === 401) {
-						errorMessage = "Authentication required";
-					}
-				}
-				error.set(errorMessage);
-				console.error("Error while creating conversation: ", errorMessage);
-				return;
-			}
-
-			const { conversationId } = await res.json();
-
-			// Pass the first message text via SvelteKit history state (JSON-serializable).
-			// File objects are not serializable, so they are stored in a client-side Map
-			// keyed by a random nonce; the nonce travels with the history state and is
-			// consumed once by the conversation page.
-			const pendingFilesNonce = files.length > 0 ? storePendingFiles(files) : undefined;
-
-			// Optimistically prepend the new conversation to the sidebar immediately so
-			// it appears before the first message starts streaming. "New Chat" matches
-			// the server-side default title; the real title arrives via a Title stream
-			// update once the LLM generates one.
-			convsStore.prepend({
-				id: conversationId,
-				title: "New Chat",
-				model,
-				updatedAt: new Date(),
-			});
-			await goto(`${base}/conversation/${conversationId}`, {
-				state: { pendingMessage: message, pendingFilesNonce },
-			});
+			await createConversation({ message, model, preprompt, files, convsStore });
 		} catch (err) {
 			error.set((err as Error).message || ERROR_MESSAGES.default);
 			console.error(err);
@@ -177,7 +84,7 @@
 
 			const query = sanitizeUrlParam(page.url.searchParams.get("q"));
 			if (query) {
-				void createConversation(query);
+				void startConversation(query);
 				const url = new URL(page.url);
 				url.searchParams.delete("q");
 				tick().then(() => {
@@ -209,7 +116,7 @@
 
 {#if hasModels}
 	<ChatWindow
-		onmessage={(message) => createConversation(message)}
+		onmessage={(message) => startConversation(message)}
 		loading={$loading}
 		{currentModel}
 		models={data.models}
