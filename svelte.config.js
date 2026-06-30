@@ -40,11 +40,7 @@ const config = {
 			trustedOrigins: ["*"],
 		},
 		csp: {
-			directives: {
-				...(process.env.ALLOW_IFRAME === "true"
-					? {}
-					: { "frame-ancestors": ["https://huggingface.co"] }),
-			},
+			directives: {},
 		},
 		alias: {},
 	},

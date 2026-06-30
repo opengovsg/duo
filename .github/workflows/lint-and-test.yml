@@ -53,15 +53,15 @@ jobs:
         run: |
           docker build \
             --build-arg INCLUDE_DB=true \
-            -t chat-ui-test:latest .
+            -t duo-test:latest .
 
       - name: Run Docker container
         run: |
           export DOTENV_LOCAL=$(<.env.ci)
           docker run -d --rm --network=host \
-            --name chat-ui-test \
+            --name duo-test \
             -e DOTENV_LOCAL="$DOTENV_LOCAL" \
-            chat-ui-test:latest
+            duo-test:latest
 
       - name: Wait for server to start
         run: |
@@ -74,10 +74,10 @@ jobs:
             sleep 2
           done
           echo "Server did not start in time"
-          docker logs chat-ui-test
+          docker logs duo-test
           exit 1
 
       - name: Stop Docker container
         if: always()
         run: |
-          docker stop chat-ui-test || true
+          docker stop duo-test || true

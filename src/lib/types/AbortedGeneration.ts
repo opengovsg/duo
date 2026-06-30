@@ -1,4 +1,4 @@
-// Ideally shouldn't be needed, see https://github.com/huggingface/chat-ui/pull/88#issuecomment-1523173850
+// Ideally shouldn't be needed
 
 import type { Conversation } from "./Conversation";
 import type { Timestamps } from "./Timestamps";

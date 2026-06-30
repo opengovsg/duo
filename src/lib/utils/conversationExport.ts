@@ -25,7 +25,7 @@ interface ExportedConversation {
 }
 
 interface ExportBundle {
-	app: "chat-ui";
+	app: "duo";
 	version: number;
 	exportedAt: string;
 	conversations: ExportedConversation[];
@@ -48,7 +48,7 @@ async function buildExport(ids: string[]): Promise<ExportBundle> {
 		});
 	}
 	return {
-		app: "chat-ui",
+		app: "duo",
 		version: EXPORT_VERSION,
 		exportedAt: new Date().toISOString(),
 		conversations,
@@ -68,14 +68,14 @@ function download(bundle: ExportBundle, filename: string) {
 /** Download a single conversation as a JSON file. */
 export async function exportConversation(id: string): Promise<void> {
 	if (!browser) return;
-	download(await buildExport([id]), `chat-ui-conversation-${id}.json`);
+	download(await buildExport([id]), `duo-conversation-${id}.json`);
 }
 
 /** Download every locally-stored conversation as a single JSON file. */
 export async function exportAllConversations(): Promise<void> {
 	if (!browser) return;
 	const list = await conversationRepository.getConversations();
-	download(await buildExport(list.map((c) => String(c.id))), "chat-ui-conversations.json");
+	download(await buildExport(list.map((c) => String(c.id))), "duo-conversations.json");
 }
 
 /**
@@ -87,8 +87,8 @@ export async function exportAllConversations(): Promise<void> {
 export async function importConversationsFromFile(file: File): Promise<{ imported: number }> {
 	if (!browser) return { imported: 0 };
 	const bundle = superjson.parse(await file.text()) as ExportBundle;
-	if (!bundle || bundle.app !== "chat-ui" || !Array.isArray(bundle.conversations)) {
-		throw new Error("Not a valid chat-ui export file");
+	if (!bundle || bundle.app !== "duo" || !Array.isArray(bundle.conversations)) {
+		throw new Error("Not a valid duo export file");
 	}
 
 	let imported = 0;

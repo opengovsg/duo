@@ -1,8 +1,6 @@
-# Chat UI
+# Duo
 
-![Chat UI repository thumbnail](https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/chat-ui/chat-ui-2026.png)
-
-A chat interface for LLMs. It is a SvelteKit app and it powers the [HuggingChat app on hf.co/chat](https://huggingface.co/chat).
+A chat interface for LLMs, based on Chat UI, the app that powers the [HuggingChat app on hf.co/chat](https://huggingface.co/chat).
 
 0. [Quickstart](#quickstart)
 1. [Database Options](#database-options)
@@ -12,14 +10,11 @@ A chat interface for LLMs. It is a SvelteKit app and it powers the [HuggingChat 
 5. [Building](#building)
 
 > [!NOTE]
-> Chat UI only supports OpenAI-compatible APIs via `OPENAI_BASE_URL` and the `/models` endpoint. Provider-specific integrations (legacy `MODELS` env var, GGUF discovery, embeddings, web-search helpers, etc.) are removed, but any service that speaks the OpenAI protocol (llama.cpp server, Ollama, OpenRouter, etc.) will work by default.
-
-> [!NOTE]
-> The old version is still available on the [legacy branch](https://github.com/huggingface/chat-ui/tree/legacy)
+> Duo only supports OpenAI-compatible APIs via `OPENAI_BASE_URL` and the `/models` endpoint. Provider-specific integrations (legacy `MODELS` env var, GGUF discovery, embeddings, web-search helpers, etc.) are removed, but any service that speaks the OpenAI protocol (llama.cpp server, Ollama, OpenRouter, etc.) will work by default.
 
 ## Quickstart
 
-Chat UI speaks to OpenAI-compatible APIs only. The fastest way to get running is with the Hugging Face Inference Providers router plus your personal Hugging Face access token.
+Duo speaks to OpenAI-compatible APIs only. The fastest way to get running is with the Hugging Face Inference Providers router plus your personal Hugging Face access token.
 
 **Step 1 – Create `.env.local`:**
 
@@ -43,27 +38,27 @@ Check the root [`.env` template](./.env) for the full list of optional variables
 **Step 2 – Install and launch the dev server:**
 
 ```bash
-git clone https://github.com/huggingface/chat-ui
-cd chat-ui
+git clone https://github.com/opengovsg/duo
+cd duo
 npm install
 npm run dev -- --open
 ```
 
-You now have Chat UI running locally. Open the browser and start chatting.
+You now have Duo running locally. Open the browser and start chatting.
 
 ## Database Options
 
-Chat history, users, settings, files, and stats all live in MongoDB. You can point Chat UI at any MongoDB 6/7 deployment.
+Chat history, users, settings, files, and stats all live in MongoDB. You can point Duo at any MongoDB 6/7 deployment.
 
 > [!TIP]
-> For quick local development, you can skip this section. When `MONGODB_URL` is not set, Chat UI falls back to an embedded MongoDB that persists to `./db`.
+> For quick local development, you can skip this section. When `MONGODB_URL` is not set, Duo falls back to an embedded MongoDB that persists to `./db`.
 
 ### MongoDB Atlas (managed)
 
 1. Create a free cluster at [mongodb.com](https://www.mongodb.com/pricing).
 2. Add your IP (or `0.0.0.0/0` for development) to the network access list.
 3. Create a database user and copy the connection string.
-4. Paste that string into `MONGODB_URL` in `.env.local`. Keep the default `MONGODB_DB_NAME=chat-ui` or change it per environment.
+4. Paste that string into `MONGODB_URL` in `.env.local`. Keep the default `MONGODB_DB_NAME=duo` or change it per environment.
 
 Atlas keeps MongoDB off your laptop, which is ideal for teams or cloud deployments.
 
@@ -79,7 +74,7 @@ Then set `MONGODB_URL=mongodb://localhost:27017` in `.env.local`.
 
 ## Launch
 
-After configuring your environment variables, start Chat UI with:
+After configuring your environment variables, start Duo with:
 
 ```bash
 npm install
@@ -90,15 +85,15 @@ The dev server listens on `http://localhost:5173` by default. Use `npm run build
 
 ## Optional Docker Image
 
-The `chat-ui-db` image bundles MongoDB inside the container:
+The `duo-db` image bundles MongoDB inside the container:
 
 ```bash
 docker run \
   -p 3000:3000 \
   -e OPENAI_BASE_URL=https://router.huggingface.co/v1 \
   -e OPENAI_API_KEY=hf_*** \
-  -v chat-ui-data:/data \
-  ghcr.io/huggingface/chat-ui-db:latest
+  -v duo-data:/data \
+  ghcr.io/opengovsg/duo-db:latest
 ```
 
 All environment variables accepted in `.env.local` can be provided as `-e` flags.
@@ -107,7 +102,7 @@ All environment variables accepted in `.env.local` can be provided as `-e` flags
 
 ### Theming
 
-You can use a few environment variables to customize the look and feel of chat-ui. These are by default:
+You can use a few environment variables to customize the look and feel of duo. These are by default:
 
 ```env
 PUBLIC_APP_NAME=ChatUI
@@ -126,13 +121,13 @@ Models are discovered from `${OPENAI_BASE_URL}/models`, and you can optionally o
 
 ### LLM Router (Optional)
 
-Chat UI can perform server-side smart routing using a local heuristic — no separate router service or selection model is called. The UI exposes a virtual model alias called "Omni" (configurable) that, when selected, chooses the best route/model for each message: image inputs go to a `multimodal` route, MCP-tool-enabled requests go to an `agentic` route, and everything else goes to a `default` route.
+Duo can perform server-side smart routing using a local heuristic — no separate router service or selection model is called. The UI exposes a virtual model alias called "Omni" (configurable) that, when selected, chooses the best route/model for each message: image inputs go to a `multimodal` route, MCP-tool-enabled requests go to an `agentic` route, and everything else goes to a `default` route.
 
 - Provide a routes policy JSON via `LLM_ROUTER_ROUTES_PATH`. No sample file ships with this branch, so you must point the variable to a JSON array you create yourself (for example, commit one in your project like `config/routes.chat.json`). Each route entry needs `name`, `description`, `primary_model`, and optional `fallback_models`. The router recognizes the route names `default`, `multimodal`, and `agentic`.
 - The default route name is configurable via `LLM_ROUTER_DEFAULT_ROUTE` (default: `default`). If the selected route's models all fail, calls fall back to `LLM_ROUTER_FALLBACK_MODEL`.
 - Omni alias configuration: `PUBLIC_LLM_ROUTER_ALIAS_ID` (default `omni`), `PUBLIC_LLM_ROUTER_DISPLAY_NAME` (default `Omni`), and optional `PUBLIC_LLM_ROUTER_LOGO_URL`.
 
-When you select Omni in the UI, Chat UI will:
+When you select Omni in the UI, Duo will:
 
 - Pick a route locally based on the request signals (image attached, MCP server enabled, or default).
 - Emit RouterMetadata immediately (route and actual model used) so the UI can display it.
@@ -145,7 +140,7 @@ Tool and multimodal shortcuts:
 
 ### MCP Tools (Optional)
 
-Chat UI can call tools exposed by Model Context Protocol (MCP) servers and feed results back to the model using OpenAI function calling. You can preconfigure trusted servers via env, let users add their own, and optionally have the Omni router auto‑select a tools‑capable model.
+Duo can call tools exposed by Model Context Protocol (MCP) servers and feed results back to the model using OpenAI function calling. You can preconfigure trusted servers via env, let users add their own, and optionally have the Omni router auto‑select a tools‑capable model.
 
 Configure servers (base list for all users):
 
@@ -164,7 +159,7 @@ MCP_FORWARD_HF_USER_TOKEN=true
 Enable router tool path (Omni):
 
 - Set `LLM_ROUTER_ENABLE_TOOLS=true` and choose a tools‑capable target with `LLM_ROUTER_TOOLS_MODEL=<model id or name>`.
-- The target must support OpenAI tools/function calling. Chat UI surfaces a “tools” badge on models that advertise this; you can also force‑enable it per‑model in settings (see below).
+- The target must support OpenAI tools/function calling. Duo surfaces a “tools” badge on models that advertise this; you can also force‑enable it per‑model in settings (see below).
 
 Use tools in the UI:
 

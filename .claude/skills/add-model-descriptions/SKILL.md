@@ -1,11 +1,11 @@
 ---
 name: add-model-descriptions
-description: Add descriptions for new models from the HuggingFace router to chat-ui configuration, flag reasoning-capable ones, and enable artifacts for models with 32B+ parameters. Use when new models are released on the router and need descriptions added to prod.yaml and dev.yaml. Triggers on requests like "add new model descriptions", "update models from router", "sync models", or when explicitly invoking /add-model-descriptions.
+description: Add descriptions for new models from the HuggingFace router to duo configuration, flag reasoning-capable ones, and enable artifacts for models with 32B+ parameters. Use when new models are released on the router and need descriptions added to prod.yaml and dev.yaml. Triggers on requests like "add new model descriptions", "update models from router", "sync models", or when explicitly invoking /add-model-descriptions.
 ---
 
 # Add Model Descriptions
 
-Add descriptions for new models available in the HuggingFace router to chat-ui's `prod.yaml` and `dev.yaml`. Also flag models that support the OpenAI-compatible `reasoning_effort` parameter so chat-ui shows the thinking-effort selector for them, and enable artifacts for models with 32B or more total parameters.
+Add descriptions for new models available in the HuggingFace router to duo's `prod.yaml` and `dev.yaml`. Also flag models that support the OpenAI-compatible `reasoning_effort` parameter so duo shows the thinking-effort selector for them, and enable artifacts for models with 32B or more total parameters.
 
 ## Workflow
 
@@ -36,7 +36,7 @@ Add descriptions for new models available in the HuggingFace router to chat-ui's
    - **Whether it's a reasoning model** (see step 5)
 
 5. **Decide if the model is reasoning-capable**
-   A model is "reasoning-capable" for chat-ui purposes if it accepts the OpenAI-style `reasoning_effort: low|medium|high` parameter via the HF router and _meaningfully changes its chain-of-thought depth_ in response. Whether that holds depends on **both the model and the providers serving it** — the router is a transparent proxy, so behavior comes from each provider's implementation. Don't decide from the name alone.
+   A model is "reasoning-capable" for duo purposes if it accepts the OpenAI-style `reasoning_effort: low|medium|high` parameter via the HF router and _meaningfully changes its chain-of-thought depth_ in response. Whether that holds depends on **both the model and the providers serving it** — the router is a transparent proxy, so behavior comes from each provider's implementation. Don't decide from the name alone.
 
    **Heuristic shortlist (candidates worth verifying):**
 
@@ -68,7 +68,7 @@ Add descriptions for new models available in the HuggingFace router to chat-ui's
    If none of the live providers document reasoning support for the model, don't flag it — even if the name pattern-matches. If documentation is ambiguous, lean toward not flagging and mention it in the commit so it can be revisited.
 
 6. **Decide if the model gets artifacts**
-   Enable artifacts for any new model with **32B or more total parameters** by appending `"supportsArtifacts": true` to its entry. This makes chat-ui instruct the model to emit `<artifact>` blocks rendered in the side panel.
+   Enable artifacts for any new model with **32B or more total parameters** by appending `"supportsArtifacts": true` to its entry. This makes duo instruct the model to emit `<artifact>` blocks rendered in the side panel.
 
    - Use the **total** parameter count, not active parameters. A `35B-A3B` MoE qualifies (35B total ≥ 32B) even though only 3B are active.
    - The count is usually in the model name (`Qwen3.6-27B`, `550B-A55B`). When it isn't, use the parameter count found while researching the model in step 4.
@@ -113,7 +113,7 @@ Add descriptions for new models available in the HuggingFace router to chat-ui's
    }
    ```
 
-   `supportsReasoning` is what makes chat-ui render the Thinking-effort dropdown in the chat footer for that model and forward `reasoning_effort` to the router. `supportsArtifacts` enables the artifacts side panel for the model.
+   `supportsReasoning` is what makes duo render the Thinking-effort dropdown in the chat footer for that model and forward `reasoning_effort` to the router. `supportsArtifacts` enables the artifacts side panel for the model.
 
 9. **Commit changes**
    In the commit message, mention how many of the new models are reasoning-capable and how many get artifacts so it's easy to review.
