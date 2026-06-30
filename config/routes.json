@@ -1,0 +1,17 @@
+[
+	{
+		"name": "default",
+		"description": "General purpose route for all conversations.",
+		"primary_model": "kilo-auto/free"
+	},
+	{
+		"name": "multimodal",
+		"description": "Route for requests with image inputs.",
+		"primary_model": "kilo-auto/small"
+	},
+	{
+		"name": "agentic",
+		"description": "Route for MCP server tool calling.",
+		"primary_model": "kilo-auto/small"
+	}
+]
