@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Modal from "$lib/components/Modal.svelte";
-	import IconOmni from "$lib/components/icons/IconOmni.svelte";
+	import Logo from "$lib/components/icons/Logo.svelte";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 
 	const publicConfig = usePublicConfig();
@@ -19,29 +19,17 @@
 		<div
 			class="relative -mx-6 grid h-48 place-items-center overflow-hidden rounded-b-xl bg-linear-to-t from-black/5 select-none dark:from-white/10"
 		>
-			<img
-				class="size-full bg-black object-cover"
-				src="{publicConfig.assetPath}/omni-welcome.gif"
-				alt="Omni AI model router animation"
-			/>
-			<!-- <h2
+			<h2
 				class="flex translate-y-1 items-center text-3xl font-semibold text-gray-900 dark:text-gray-100"
 			>
 				<Logo classNames="mr-2 size-12 dark:invert" />
 				{publicConfig.PUBLIC_APP_NAME}
-			</h2> -->
+			</h2>
 		</div>
 
 		<div class="text-gray-700 dark:text-gray-200">
 			<p class="text-[15px] leading-relaxed">
-				Welcome to {publicConfig.PUBLIC_APP_NAME}, the chat app powered by open source AI models.
-			</p>
-			<p class="mt-3 text-[15px] leading-relaxed">
-				<IconOmni classNames="-translate-y-px" /> Omni automatically picks the best AI model to give you
-				optimal answers depending on your requests.
-			</p>
-			<p class="mt-3 text-[15px] leading-relaxed">
-				You can also choose from any available open source models to chat with directly.
+				Welcome to {publicConfig.PUBLIC_APP_NAME}, an open-source AI chat app.
 			</p>
 		</div>
 
