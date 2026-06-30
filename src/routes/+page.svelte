@@ -16,7 +16,7 @@
 	import { conversationRepository } from "$lib/repositories/ConversationRepository";
 	import { generateObjectId } from "$lib/utils/generateObjectId";
 	import { v4 as uuidv4 } from "uuid";
-	import superjson from "superjson";
+
 	import { findCurrentModel } from "$lib/utils/models";
 	import { sanitizeUrlParam } from "$lib/utils/urlParams";
 	import { onMount, tick } from "svelte";
@@ -34,22 +34,16 @@
 
 	const settings = useSettingsStore();
 
-	async function createConversation(message: string) {
+	async function startConversation(message: string) {
 		try {
 			$loading = true;
 
 			// check if $settings.activeModel is a valid model
-			// else check if it's an assistant, and use that model
 			// else use the first model
-
 			const validModels = data.models.map((model) => model.id);
-
-			let model;
-			if (validModels.includes($settings.activeModel)) {
-				model = $settings.activeModel;
-			} else {
-				model = data.models[0].id;
-			}
+			const model = validModels.includes($settings.activeModel)
+				? $settings.activeModel
+				: data.models[0].id;
 
 			const preprompt =
 				($settings.customPromptsEnabled?.[$settings.activeModel] ?? true)
@@ -190,7 +184,7 @@
 
 			const query = sanitizeUrlParam(page.url.searchParams.get("q"));
 			if (query) {
-				void createConversation(query);
+				void startConversation(query);
 				const url = new URL(page.url);
 				url.searchParams.delete("q");
 				tick().then(() => {
@@ -222,7 +216,7 @@
 
 {#if hasModels}
 	<ChatWindow
-		onmessage={(message) => createConversation(message)}
+		onmessage={(message) => startConversation(message)}
 		loading={$loading}
 		{currentModel}
 		models={data.models}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import { base } from "$app/paths";
-	import { goto, replaceState } from "$app/navigation";
+	import { replaceState } from "$app/navigation";
 	import { onMount, tick } from "svelte";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 
@@ -10,7 +10,7 @@
 	import { useSettingsStore } from "$lib/stores/settings";
 	import { useConversationsStore } from "$lib/stores/conversations.svelte";
 	import { ERROR_MESSAGES, error } from "$lib/stores/errors";
-	import { storePendingFiles } from "$lib/utils/pendingFiles";
+	import { createConversation } from "$lib/utils/createConversation";
 	import { sanitizeUrlParam } from "$lib/utils/urlParams";
 	import { loadAttachmentsFromUrls } from "$lib/utils/loadAttachmentsFromUrls";
 	import { requireAuthUser } from "$lib/utils/auth";
@@ -33,51 +33,14 @@
 			.join("/")
 	);
 
-	async function createConversation(message: string) {
+	async function startConversation(message: string) {
 		try {
 			loading = true;
 
-			const res = await fetch(`${base}/conversation`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					model: modelId,
-					preprompt:
-						($settings.customPromptsEnabled?.[modelId] ?? true)
-							? $settings.customPrompts[modelId]
-							: "",
-				}),
-			});
+			const preprompt =
+				($settings.customPromptsEnabled?.[modelId] ?? true) ? $settings.customPrompts[modelId] : "";
 
-			if (!res.ok) {
-				error.set("Error while creating conversation, try again.");
-				console.error("Error while creating conversation: " + (await res.text()));
-				return;
-			}
-
-			const { conversationId } = await res.json();
-
-			// Pass the first message text via SvelteKit history state (JSON-serializable).
-			// File objects are not serializable, so they are stored in a client-side Map
-			// keyed by a random nonce; the nonce travels with the history state and is
-			// consumed once by the conversation page.
-			const pendingFilesNonce = files.length > 0 ? storePendingFiles(files) : undefined;
-
-			// Optimistically prepend the new conversation to the sidebar immediately so
-			// it appears before the first message starts streaming. "New Chat" matches
-			// the server-side default title; the real title arrives via a Title stream
-			// update once the LLM generates one.
-			convsStore.prepend({
-				id: conversationId,
-				title: "New Chat",
-				model: modelId,
-				updatedAt: new Date(),
-			});
-			await goto(`${base}/conversation/${conversationId}`, {
-				state: { pendingMessage: message, pendingFilesNonce },
-			});
+			await createConversation({ message, model: modelId, preprompt, files, convsStore });
 		} catch (err) {
 			error.set(ERROR_MESSAGES.default);
 			console.error(err);
@@ -118,7 +81,7 @@
 
 			const query = sanitizeUrlParam(page.url.searchParams.get("q"));
 			if (query) {
-				void createConversation(query);
+				void startConversation(query);
 				const url = new URL(page.url);
 				url.searchParams.delete("q");
 				tick().then(() => {
@@ -169,7 +132,7 @@
 </svelte:head>
 
 <ChatWindow
-	onmessage={(message) => createConversation(message)}
+	onmessage={(message) => startConversation(message)}
 	{loading}
 	currentModel={findCurrentModel(data.models, data.oldModels, modelId)}
 	models={data.models}
