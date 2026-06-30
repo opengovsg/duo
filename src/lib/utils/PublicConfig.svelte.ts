@@ -47,7 +47,7 @@ class PublicConfigManager {
 			(this.#configStore.PUBLIC_ORIGIN || page.url.origin) +
 			base +
 			"/" +
-			(this.#configStore.PUBLIC_APP_ASSETS || "chatui")
+			(this.#configStore.PUBLIC_APP_ASSETS || "duo")
 		);
 	}
 }

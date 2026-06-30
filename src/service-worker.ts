@@ -8,7 +8,7 @@ import { base, build, files, version } from "$service-worker";
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
 // Create a unique cache name for this deployment
-const CACHE_NAME = `chat-ui-${version}`;
+const CACHE_NAME = `duo-${version}`;
 
 // Assets to precache (app shell)
 const ASSETS = [...build, ...files];

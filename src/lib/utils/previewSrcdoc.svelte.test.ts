@@ -59,7 +59,7 @@ describe("preview hook script", () => {
 			channel
 		);
 		expect(await message).toEqual({
-			type: "chatui.preview.openLink",
+			type: "duo.preview.openLink",
 			channel,
 			detail: { href: "https://huggingface.co/models" },
 		});
@@ -101,7 +101,7 @@ describe("preview hook script", () => {
 			channel
 		);
 		const received = await message;
-		expect(received.type).toBe("chatui.preview.error");
+		expect(received.type).toBe("duo.preview.error");
 		expect(received.detail?.message).toContain("boom");
 	});
 });

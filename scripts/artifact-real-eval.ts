@@ -3,7 +3,7 @@
  *
  * Reproduces the EXACT HuggingChat path: inject ARTIFACTS_SYSTEM_PROMPT, ask the
  * real router model to create an artifact, then to edit it, assemble the assistant
- * messages the way chat-ui does (reasoning wrapped in <think>, then content), and
+ * messages the way duo does (reasoning wrapped in <think>, then content), and
  * run the captured transcript through the real client parser (collectArtifacts).
  *
  * Run: SCENARIO=color MODEL=zai-org/GLM-5.2 RUN=1 npx vite-node scripts/artifact-real-eval.ts
@@ -76,7 +76,7 @@ async function complete(
 	const msg = j.choices?.[0]?.message ?? {};
 	const reasoning = msg.reasoning ?? msg.reasoning_content ?? "";
 	const content = typeof msg.content === "string" ? msg.content : "";
-	// Assemble exactly like chat-ui's OpenAI path: reasoning becomes a <think> block
+	// Assemble exactly like duo's OpenAI path: reasoning becomes a <think> block
 	// before the visible content. This is what collectArtifacts() actually receives.
 	return reasoning ? `<think>${reasoning}</think>${content}` : content;
 }

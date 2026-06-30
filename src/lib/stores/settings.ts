@@ -4,7 +4,7 @@ import { getContext, setContext } from "svelte";
 import { type Writable, writable, get } from "svelte/store";
 
 // Database-free build: settings always live in localStorage, never the server.
-const SETTINGS_LOCAL_KEY = "chat-ui-settings";
+const SETTINGS_LOCAL_KEY = "duo-settings";
 
 function persistSettingsLocally(settings: unknown) {
 	if (!browser) return;

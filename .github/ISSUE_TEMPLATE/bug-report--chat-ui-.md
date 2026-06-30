@@ -1,6 +1,6 @@
 ---
-name: Bug Report (chat-ui)
-about: Use this for confirmed issues with chat-ui
+name: Bug Report (duo)
+about: Use this for confirmed issues with duo
 title: ""
 labels: bug
 assignees: ""
@@ -32,11 +32,11 @@ assignees: ""
 
 - **OS**:
 - **Browser**:
-- **chat-ui commit**:
+- **duo commit**:
 
 ### Config
 
-<!-- Add the environment variables you've used to setup chat-ui, making sure to redact any secrets. -->
+<!-- Add the environment variables you've used to setup duo, making sure to redact any secrets. -->
 
 ## Notes
 

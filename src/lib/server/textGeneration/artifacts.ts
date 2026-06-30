@@ -1,6 +1,6 @@
 /**
  * System prompt teaching models how to emit artifacts: substantial,
- * self-contained content rendered in chat-ui's side panel with live preview
+ * self-contained content rendered in duo's side panel with live preview
  * and version history. Parsed client-side by `$lib/utils/artifacts`.
  *
  * Opt-in per model: set `supportsArtifacts: true` on a model entry in the

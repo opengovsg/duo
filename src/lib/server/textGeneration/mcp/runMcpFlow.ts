@@ -471,7 +471,7 @@ export async function* runMcpFlow({
 					openai.chat.completions.create(completionRequest, {
 						signal: abortSignal,
 						headers: {
-							"ChatUI-Conversation-ID": conv._id.toString(),
+							"Duo-Conversation-ID": conv._id.toString(),
 							"X-use-cache": "false",
 							...(config.USE_USER_TOKEN === "true" && locals?.token
 								? { Authorization: `Bearer ${locals.token}` }
@@ -632,7 +632,7 @@ export async function* runMcpFlow({
 						{
 							signal: abortSignal,
 							headers: {
-								"ChatUI-Conversation-ID": conv._id.toString(),
+								"Duo-Conversation-ID": conv._id.toString(),
 								"X-use-cache": "false",
 								...(config.USE_USER_TOKEN === "true" && locals?.token
 									? { Authorization: `Bearer ${locals.token}` }

@@ -155,7 +155,7 @@ export async function endpointOai(
 				openai.completions.create(body, {
 					body: { ...body, ...extraBody },
 					headers: {
-						"ChatUI-Conversation-ID": conversationId?.toString() ?? "",
+						"Duo-Conversation-ID": conversationId?.toString() ?? "",
 						"X-use-cache": "false",
 						...(config.USE_USER_TOKEN === "true" && locals?.token
 							? { Authorization: `Bearer ${locals.token}` }
@@ -237,7 +237,7 @@ export async function endpointOai(
 					openai.chat.completions.create(body as ChatCompletionCreateParamsStreaming, {
 						body: { ...body, ...extraBody },
 						headers: {
-							"ChatUI-Conversation-ID": conversationId?.toString() ?? "",
+							"Duo-Conversation-ID": conversationId?.toString() ?? "",
 							"X-use-cache": "false",
 							...(config.USE_USER_TOKEN === "true" && locals?.token
 								? { Authorization: `Bearer ${locals.token}` }
@@ -256,7 +256,7 @@ export async function endpointOai(
 					openai.chat.completions.create(body as ChatCompletionCreateParamsNonStreaming, {
 						body: { ...body, ...extraBody },
 						headers: {
-							"ChatUI-Conversation-ID": conversationId?.toString() ?? "",
+							"Duo-Conversation-ID": conversationId?.toString() ?? "",
 							"X-use-cache": "false",
 							...(config.USE_USER_TOKEN === "true" && locals?.token
 								? { Authorization: `Bearer ${locals.token}` }

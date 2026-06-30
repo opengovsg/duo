@@ -1,5 +1,5 @@
 {
-	"name": "chat-ui",
+	"name": "duo",
 	"version": "0.20.0",
 	"private": true,
 	"packageManager": "npm@9.5.0",

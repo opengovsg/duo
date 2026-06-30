@@ -64,7 +64,7 @@ Both directions share the same source of truth: whatever `https://router.hugging
    - **Whether it's a reasoning model** (see step 5)
 
 5. **Decide if the model is reasoning-capable**
-   A model is "reasoning-capable" for chat-ui purposes if it accepts the OpenAI-style `reasoning_effort: low|medium|high` parameter via the HF router and _meaningfully changes its chain-of-thought depth_ in response. Whether that holds depends on **both the model and the providers serving it** — the router is a transparent proxy, so behavior comes from each provider's implementation. Don't decide from the name alone.
+   A model is "reasoning-capable" for duo purposes if it accepts the OpenAI-style `reasoning_effort: low|medium|high` parameter via the HF router and _meaningfully changes its chain-of-thought depth_ in response. Whether that holds depends on **both the model and the providers serving it** — the router is a transparent proxy, so behavior comes from each provider's implementation. Don't decide from the name alone.
 
    **Heuristic shortlist (candidates worth verifying):**
 
@@ -96,7 +96,7 @@ Both directions share the same source of truth: whatever `https://router.hugging
    If none of the live providers document reasoning support for the model, don't flag it — even if the name pattern-matches. If documentation is ambiguous, lean toward not flagging and mention it in the commit so it can be revisited.
 
 6. **Decide if the model gets artifacts**
-   Enable artifacts for any new model with **32B or more total parameters** by appending `"supportsArtifacts": true` to its entry. This makes chat-ui instruct the model to emit `<artifact>` blocks rendered in the side panel.
+   Enable artifacts for any new model with **32B or more total parameters** by appending `"supportsArtifacts": true` to its entry. This makes duo instruct the model to emit `<artifact>` blocks rendered in the side panel.
 
    - Use the **total** parameter count, not active parameters. A `35B-A3B` MoE qualifies (35B total ≥ 32B) even though only 3B are active.
    - The count is usually in the model name (`Qwen3.6-27B`, `550B-A55B`). When it isn't, use the parameter count found while researching the model in step 4.
@@ -141,7 +141,7 @@ Both directions share the same source of truth: whatever `https://router.hugging
    }
    ```
 
-   `supportsReasoning` is what makes chat-ui render the Thinking-effort dropdown in the chat footer for that model and forward `reasoning_effort` to the router. `supportsArtifacts` enables the artifacts side panel for the model.
+   `supportsReasoning` is what makes duo render the Thinking-effort dropdown in the chat footer for that model and forward `reasoning_effort` to the router. `supportsArtifacts` enables the artifacts side panel for the model.
 
 9. **Remove deprecated models from both files**
    Delete the full entry line for every id in the deprecated set (step 3) from **both** `chart/env/prod.yaml` and `chart/env/dev.yaml`. Match on the exact `"id"` value so near-duplicate ids aren't removed by accident, and keep the removal symmetric — the two files must end with the same model set.

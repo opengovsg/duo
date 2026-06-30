@@ -119,7 +119,7 @@ export async function makeRouterEndpoint(routerModel: ProcessedModel): Promise<E
 
 		// Helper to create an OpenAI endpoint for a specific candidate model id
 		async function createCandidateEndpoint(candidateModelId: string): Promise<Endpoint> {
-			// Try to use the real candidate model config if present in chat-ui's model list
+			// Try to use the real candidate model config if present in duo's model list
 			let modelForCall: ProcessedModel | undefined;
 			try {
 				const all = await getModels();
