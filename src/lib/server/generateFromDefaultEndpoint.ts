@@ -47,7 +47,7 @@ export async function* generateFromDefaultEndpoint({
 				token: output.token.text,
 			};
 		}
-	} catch (error) {
+	} catch {
 		return "";
 	}
 
