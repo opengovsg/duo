@@ -75,19 +75,6 @@
 
 	let OPENAI_BASE_URL = $state<string | null>(null);
 
-	// Billing organization state
-	type BillingOrg = { sub: string; name: string; preferred_username: string };
-	let billingOrgs = $state<BillingOrg[]>([]);
-	let billingOrgsLoading = $state(false);
-	let billingOrgsError = $state<string | null>(null);
-
-	function getBillingOrganization() {
-		return $settings.billingOrganization ?? "";
-	}
-	function setBillingOrganization(v: string) {
-		settings.update((s) => ({ ...s, billingOrganization: v }));
-	}
-
 	onMount(async () => {
 		// Fetch debug config
 		try {
@@ -233,77 +220,18 @@
 			</div>
 		</div>
 
-		<!-- Billing section (HuggingChat only) -->
-		{#if publicConfig.isHuggingChat && page.data.user}
-			<div
-				class="rounded-xl border border-gray-200 bg-white px-3 shadow-xs dark:border-gray-700 dark:bg-gray-800"
-			>
-				<div class="divide-y divide-gray-200 dark:divide-gray-700">
-					<!-- Bill usage to -->
-					<div class="flex items-start justify-between py-3">
-						<div>
-							<div class="text-[13px] font-medium text-gray-800 dark:text-gray-200">Billing</div>
-							<p class="text-[12px] text-gray-500 dark:text-gray-400">
-								Select between personal or organization billing (for eligible organizations).
-							</p>
-						</div>
-						<div class="flex items-center">
-							{#if billingOrgsLoading}
-								<span class="text-xs text-gray-500 dark:text-gray-400">Loading...</span>
-							{:else if billingOrgsError}
-								<span class="text-xs text-red-500">{billingOrgsError}</span>
-							{:else}
-								<select
-									class="rounded-md border border-gray-300 bg-white px-1 py-1 text-xs text-gray-800 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-									value={getBillingOrganization()}
-									onchange={(e) => setBillingOrganization(e.currentTarget.value)}
-								>
-									<option value="">Personal</option>
-									{#each billingOrgs as org}
-										<option value={org.preferred_username}>{org.name}</option>
-									{/each}
-								</select>
-							{/if}
-						</div>
-					</div>
-					<!-- Providers Usage -->
-					<div class="flex items-start justify-between py-3">
-						<div>
-							<div class="text-[13px] font-medium text-gray-800 dark:text-gray-200">
-								Providers Usage
-							</div>
-							<p class="text-[12px] text-gray-500 dark:text-gray-400">
-								See which providers you use and choose your preferred ones.
-							</p>
-						</div>
-						<a
-							href={getBillingOrganization()
-								? `https://huggingface.co/organizations/${getBillingOrganization()}/settings/inference-providers/overview`
-								: "https://huggingface.co/settings/inference-providers/overview"}
-							target="_blank"
-							class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium whitespace-nowrap text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
-						>
-							View Usage
-						</a>
-					</div>
-				</div>
-			</div>
-		{/if}
-
 		<div class="mt-6 flex flex-col gap-2 self-start text-[13px]">
-			{#if publicConfig.isHuggingChat}
-				<a
-					href="https://github.com/opengovsg/duo"
-					target="_blank"
-					class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
-					><CarbonLogoGithub class="mr-1.5 shrink-0 text-sm " /> Github repository</a
-				>
-				<a
-					href="{base}/privacy"
-					class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
-					><CarbonArrowUpRight class="mr-1.5 shrink-0 text-sm " /> About & Privacy</a
-				>
-			{/if}
+			<a
+				href="https://github.com/opengovsg/duo"
+				target="_blank"
+				class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
+				><CarbonLogoGithub class="mr-1.5 shrink-0 text-sm " /> Github repository</a
+			>
+			<a
+				href="{base}/privacy"
+				class="flex items-center underline decoration-gray-300 underline-offset-2 hover:decoration-gray-700 dark:decoration-gray-700 dark:hover:decoration-gray-400"
+				><CarbonArrowUpRight class="mr-1.5 shrink-0 text-sm " /> About & Privacy</a
+			>
 			{#if publicConfig.isStateClient}
 				<!-- Client-state mode: conversations live in this browser. Export/import
 				     is the portability substitute for sharing. -->

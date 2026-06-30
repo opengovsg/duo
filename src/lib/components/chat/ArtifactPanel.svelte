@@ -5,12 +5,11 @@
 	import type { ArtifactRegistry, ArtifactVersion } from "$lib/utils/artifacts";
 	import { artifactFileName, isPreviewableKind } from "$lib/utils/artifacts";
 	import { diffLines, diffStats, renderDiffHtml } from "$lib/utils/artifactDiff";
-	import { buildArtifactSrcdoc, isDeployableKind } from "$lib/utils/previewSrcdoc";
+	import { buildArtifactSrcdoc } from "$lib/utils/previewSrcdoc";
 	import { parseExternalUrl } from "$lib/utils/externalLink";
 	import { highlightCode } from "$lib/utils/marked";
 	import { artifactPanel, ARTIFACT_PANEL_DEFAULT_FRACTION } from "$lib/stores/artifactPanel.svelte";
 	import { pendingChatInput } from "$lib/stores/pendingChatInput";
-	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
 	import { page } from "$app/state";
 
 	import MarkdownRenderer from "./MarkdownRenderer.svelte";
@@ -23,7 +22,6 @@
 	import CarbonChevronLeft from "~icons/carbon/chevron-left";
 	import CarbonChevronRight from "~icons/carbon/chevron-right";
 	import CarbonDownload from "~icons/carbon/download";
-	import CarbonRocket from "~icons/carbon/rocket";
 	import CarbonMaximize from "~icons/carbon/maximize";
 	import LucideWrapText from "~icons/lucide/wrap-text";
 	import LucideDiff from "~icons/lucide/diff";
@@ -316,8 +314,6 @@
 		artifactPanel.version = clamped >= totalVersions ? null : clamped;
 	}
 
-	// ----- deploy to a Hugging Face Space (HuggingChat only) -----
-	const publicConfig = usePublicConfig();
 	let conversationId = $derived(page.params?.id);
 	let deployModalOpen = $state(false);
 	// Deployments made this session, overlaid on the ones loaded with the page so
@@ -348,13 +344,6 @@
 		if (!cid || !id) return;
 		sessionDeployments[cid] = { ...(sessionDeployments[cid] ?? {}), [id]: deployment };
 	}
-	let canDeploy = $derived(
-		publicConfig.isHuggingChat &&
-			!!conversationId &&
-			!!version &&
-			version.complete &&
-			isDeployableKind(version.type)
-	);
 
 	function handleKeydown(e: KeyboardEvent) {
 		// An Escape already consumed by a modal (external-link confirm, fullscreen
@@ -450,16 +439,6 @@
 				>
 					<CarbonDownload />
 				</button>
-				{#if canDeploy}
-					<button
-						type="button"
-						class="btn rounded-md p-1.5 text-xs hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-						title={currentDeployment ? "Update Space" : "Deploy to Space"}
-						onclick={() => (deployModalOpen = true)}
-					>
-						<CarbonRocket />
-					</button>
-				{/if}
 				{#if fullscreenSupported}
 					<button
 						type="button"

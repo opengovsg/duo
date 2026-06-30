@@ -2,8 +2,6 @@
 	import type { Message } from "$lib/types/Message";
 	import { tick } from "svelte";
 
-	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
-	const publicConfig = usePublicConfig();
 	import CopyToClipBoardBtn from "../CopyToClipBoardBtn.svelte";
 	import IconLoading from "../icons/IconLoading.svelte";
 	import CarbonRotate360 from "~icons/carbon/rotate-360";
@@ -482,20 +480,11 @@
 								{message.routerMetadata.route}
 							</span>
 							<span class="text-gray-500">with</span>
-							{#if publicConfig.isHuggingChat}
-								<a
-									href="/chat/settings/{message.routerMetadata.model}"
-									class="flex items-center gap-1 truncate rounded-sm bg-gray-100 px-1 font-mono hover:text-gray-500 @xl:py-px dark:bg-gray-800 dark:hover:text-gray-300"
-								>
-									{message.routerMetadata.model.split("/").pop()}
-								</a>
-							{:else}
-								<span
-									class="truncate rounded-sm bg-gray-100 px-1.5 font-mono @xl:py-px dark:bg-gray-800"
-								>
-									{message.routerMetadata.model.split("/").pop()}
-								</span>
-							{/if}
+							<span
+								class="truncate rounded-sm bg-gray-100 px-1.5 font-mono @xl:py-px dark:bg-gray-800"
+							>
+								{message.routerMetadata.model}
+							</span>
 						{/if}
 						{#if message.routerMetadata.provider}
 							{@const hubOrg = PROVIDERS_HUB_ORGS[message.routerMetadata.provider]}

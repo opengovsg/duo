@@ -1,4 +1,3 @@
-import { config } from "$lib/server/config";
 import { loginEnabled } from "$lib/server/auth";
 import { models } from "$lib/server/models";
 import type { Message } from "$lib/types/Message";
@@ -308,9 +307,9 @@ export async function POST({ request, locals, params, getClientAddress }) {
 					promptedAt,
 					ip: getClientAddress(),
 					username: locals.user?.username,
-					forceMultimodal: !config.isHuggingChat && Boolean(clientOverrides?.forceMultimodal),
-					forceTools: !config.isHuggingChat && Boolean(clientOverrides?.forceTools),
-					provider: config.isHuggingChat && !model.isRouter ? clientOverrides?.provider : undefined,
+					forceMultimodal: Boolean(clientOverrides?.forceMultimodal),
+					forceTools: Boolean(clientOverrides?.forceTools),
+					provider: undefined,
 					reasoningEffort: clientOverrides?.reasoningEffort,
 					artifactsOverride: clientOverrides?.artifactsOverride,
 					locals,
