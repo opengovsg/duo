@@ -39,6 +39,9 @@
 
 	let isNavCollapsed = $state(false);
 
+	// Measured height of the stacked top banners; used to offset the chat content.
+	let bannerHeight = $state(0);
+
 	let errorToastTimeout: ReturnType<typeof setTimeout>;
 	let currentError: string | undefined = $state();
 
@@ -260,40 +263,39 @@
 
 <BackgroundGenerationPoller />
 
-<!-- Offline banner -->
-{#if browser && !isOnline.value}
-	<div
-		class="fixed top-0 right-0 left-0 z-50 flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-md transition-[left] duration-300 {!isNavCollapsed
-			? 'md:left-[260px]'
-			: 'md:left-0'}"
-	>
-		<span class="inline-block size-2 rounded-full bg-white/60"></span>
-		You are currently offline. Some features may be unavailable.
-	</div>
-{/if}
-
-<!-- Service worker update notification -->
-{#if swUpdateAvailable}
-	<div
-		class="fixed top-0 right-0 left-0 z-50 flex items-center justify-center gap-3 bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md transition-[left] duration-300 {!isNavCollapsed
-			? 'md:left-[260px]'
-			: 'md:left-0'}"
-		class:top-8={browser && !isOnline.value}
-	>
-		<span>A new version of {publicConfig.PUBLIC_APP_NAME} is available.</span>
-		<button
-			class="rounded-lg bg-white px-3 py-1 text-sm font-semibold text-blue-700 hover:bg-blue-50"
-			onclick={handleUpdateNow}
+<!-- Top banners pinned to the very top across all viewports. bannerHeight is
+	measured so the app shell below can be offset by exactly the stacked banner
+	height, keeping both the navbar and the page content clear of the banners. -->
+<div bind:clientHeight={bannerHeight} class="fixed top-0 right-0 left-0 z-50 flex flex-col">
+	{#if browser && !isOnline.value}
+		<div
+			class="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-medium text-white shadow-md"
 		>
-			Update Now
-		</button>
-	</div>
-{/if}
+			<span class="inline-block size-2 rounded-full bg-white/60"></span>
+			You are currently offline. Some features may be unavailable.
+		</div>
+	{/if}
+
+	{#if swUpdateAvailable}
+		<div
+			class="flex items-center justify-center gap-3 bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-md"
+		>
+			<span>A new version of {publicConfig.PUBLIC_APP_NAME} is available.</span>
+			<button
+				class="rounded-lg bg-white px-3 py-1 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+				onclick={handleUpdateNow}
+			>
+				Update Now
+			</button>
+		</div>
+	{/if}
+</div>
 
 <div
 	class="fixed grid h-dvh w-screen grid-cols-1 grid-rows-[auto_1fr] overflow-hidden text-smd {!isNavCollapsed
 		? 'md:grid-cols-[260px_1fr]'
 		: 'md:grid-cols-[0px_1fr]'} transition-[300ms] [transition-property:grid-template-columns] md:grid-rows-[1fr] dark:text-gray-300"
+	style:padding-top={bannerHeight ? `${bannerHeight}px` : undefined}
 >
 	<ExpandNavigation
 		isCollapsed={isNavCollapsed}
