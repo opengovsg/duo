@@ -2,16 +2,16 @@
 	{
 		"name": "default",
 		"description": "General purpose route for all conversations.",
-		"primary_model": "kilo-auto/free"
+		"primary_model": "cohere/north-mini-code:free"
 	},
 	{
 		"name": "multimodal",
 		"description": "Route for requests with image inputs.",
-		"primary_model": "kilo-auto/small"
+		"primary_model": "google/gemma-4-26b-a4b-it:free"
 	},
 	{
 		"name": "agentic",
 		"description": "Route for MCP server tool calling.",
-		"primary_model": "kilo-auto/small"
+		"primary_model": "openai/gpt-oss-20b:free"
 	}
 ]
