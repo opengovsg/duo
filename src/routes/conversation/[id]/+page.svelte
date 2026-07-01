@@ -524,10 +524,13 @@
 						{ type: "hash", value: update.sha, mime: update.mime, name: update.name },
 					];
 				} else if (update.type === MessageUpdateType.RouterMetadata) {
-					// Update router metadata immediately when received
+					// Update router metadata immediately when received. Merge rather than
+					// replace: a follow-up update (e.g. the model/provider disclosed in the
+					// response body) must not wipe an earlier route from the router.
 					messageToWriteTo.routerMetadata = {
-						route: update.route,
-						model: update.model,
+						route: update.route || messageToWriteTo.routerMetadata?.route || "",
+						model: update.model || messageToWriteTo.routerMetadata?.model || "",
+						provider: update.provider ?? messageToWriteTo.routerMetadata?.provider,
 					};
 				}
 			}

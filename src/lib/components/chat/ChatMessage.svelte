@@ -485,6 +485,12 @@
 							>
 								{message.routerMetadata.model}
 							</span>
+						{:else if message.routerMetadata.model}
+							<span
+								class="truncate rounded-sm bg-gray-100 px-1.5 font-mono @xl:py-px dark:bg-gray-800"
+							>
+								{message.routerMetadata.model}
+							</span>
 						{/if}
 						{#if message.routerMetadata.provider}
 							{@const hubOrg = PROVIDERS_HUB_ORGS[message.routerMetadata.provider]}

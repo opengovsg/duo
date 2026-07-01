@@ -247,11 +247,13 @@ export async function POST({ request, locals, params, getClientAddress }) {
 							model: event.model || messageToWriteTo.routerMetadata?.model || "",
 							provider: event.provider || messageToWriteTo.routerMetadata?.provider,
 						};
-					} else if (event.provider) {
+					} else if (event.model || event.provider) {
+						// Normal (non-router) models: surface the model name disclosed in the
+						// response body, plus the provider if available.
 						messageToWriteTo.routerMetadata = {
 							route: messageToWriteTo.routerMetadata?.route || "",
-							model: messageToWriteTo.routerMetadata?.model || "",
-							provider: event.provider,
+							model: event.model || messageToWriteTo.routerMetadata?.model || "",
+							provider: event.provider || messageToWriteTo.routerMetadata?.provider,
 						};
 					}
 				}

@@ -69,13 +69,20 @@ export async function* generate(
 		// 1) route+model are present (router models), or
 		// 2) provider-only is present (non-router models exposing x-inference-provider)
 		if ("routerMetadata" in output && output.routerMetadata) {
-			const hasRouteModel = Boolean(output.routerMetadata.route && output.routerMetadata.model);
-			const hasProviderOnly = Boolean(output.routerMetadata.provider);
-			if (hasRouteModel || hasProviderOnly) {
+			const reportedModel = output.routerMetadata.model || "";
+			// For non-router models, only surface the model name when it differs from the
+			// one the user selected — an identical name is just redundant noise. Model ids
+			// are compared as-is: a suffix like ":free" denotes a distinct model.
+			const specifiedModel = model.id ?? model.name;
+			const modelToShow =
+				model.isRouter || (reportedModel && reportedModel !== specifiedModel) ? reportedModel : "";
+			const hasModel = Boolean(modelToShow);
+			const hasProvider = Boolean(output.routerMetadata.provider);
+			if (hasModel || hasProvider) {
 				yield {
 					type: MessageUpdateType.RouterMetadata,
 					route: output.routerMetadata.route || "",
-					model: output.routerMetadata.model || "",
+					model: modelToShow,
 					provider:
 						(output.routerMetadata
 							.provider as unknown as import("@huggingface/inference").InferenceProvider) ||
