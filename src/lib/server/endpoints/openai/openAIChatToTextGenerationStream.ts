@@ -14,8 +14,13 @@ export async function* openAIChatToTextGenerationStream(
 	let toolBuffer = ""; // legacy hack kept harmless
 	let metadataYielded = false;
 	let thinkOpen = false;
+	// The OpenAI response body discloses which model actually served the request.
+	let responseModel = "";
 
 	for await (const completion of completionStream) {
+		if (!responseModel && typeof completion.model === "string") {
+			responseModel = completion.model;
+		}
 		const retyped = completion as {
 			"x-router-metadata"?: { route: string; model: string; provider?: string };
 		};
@@ -139,14 +144,17 @@ export async function* openAIChatToTextGenerationStream(
 		// Tools removed: ignore tool_calls deltas
 	}
 
-	// If metadata wasn't yielded from chunks (e.g., from headers), yield it at the end
-	if (!metadataYielded && getRouterMetadata) {
-		const routerMetadata = getRouterMetadata();
-		// Yield if we have either complete router metadata OR just provider info
-		if (
-			(routerMetadata && routerMetadata.route && routerMetadata.model) ||
-			routerMetadata?.provider
-		) {
+	// If metadata wasn't yielded from chunks (e.g., from headers), yield it at the end.
+	// This covers normal (non-router) models too: even without router headers we can
+	// surface the model disclosed in the response body.
+	if (!metadataYielded) {
+		const headerMetadata = getRouterMetadata?.() ?? {};
+		const routerMetadata = {
+			...headerMetadata,
+			// Prefer the model from the response body over any header-provided model.
+			model: responseModel || headerMetadata.model,
+		};
+		if (routerMetadata.route || routerMetadata.model || routerMetadata.provider) {
 			yield {
 				token: {
 					id: tokenId++,
@@ -198,14 +206,17 @@ export async function* openAIChatToTextGenerationSingle(
 		},
 		generated_text: content,
 		details: null,
-		...(getRouterMetadata
-			? (() => {
-					const metadata = getRouterMetadata();
-					return (metadata && metadata.route && metadata.model) || metadata?.provider
-						? { routerMetadata: metadata }
-						: {};
-				})()
-			: {}),
+		...(() => {
+			const headerMetadata = getRouterMetadata?.() ?? {};
+			const metadata = {
+				...headerMetadata,
+				// Prefer the model disclosed in the response body.
+				model: completion.model || headerMetadata.model,
+			};
+			return metadata.route || metadata.model || metadata.provider
+				? { routerMetadata: metadata }
+				: {};
+		})(),
 	} as TextGenerationStreamOutput & {
 		routerMetadata?: { route?: string; model?: string; provider?: string };
 	};
