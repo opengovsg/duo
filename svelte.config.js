@@ -1,5 +1,6 @@
 import adapterNode from "@sveltejs/adapter-node";
 import adapterStatic from "@sveltejs/adapter-static";
+import adapterVercel from "@sveltejs/adapter-vercel";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import dotenv from "dotenv";
 import { execSync } from "child_process";
@@ -8,6 +9,7 @@ dotenv.config({ path: "./.env.local", override: true });
 dotenv.config({ path: "./.env" });
 
 const useStatic = process.env.ADAPTER === "static";
+const useVercel = process.env.VERCEL === "1";
 
 function getCurrentCommitSHA() {
 	try {
@@ -29,7 +31,11 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
-		adapter: useStatic ? adapterStatic({ fallback: "index.html", strict: false }) : adapterNode(),
+		adapter: useStatic
+			? adapterStatic({ fallback: "index.html", strict: false })
+			: useVercel
+				? adapterVercel()
+				: adapterNode(),
 
 		paths: {
 			base: process.env.APP_BASE || "",
