@@ -2,16 +2,16 @@
 	{
 		"name": "default",
 		"description": "General purpose route for all conversations.",
-		"primary_model": "cohere/north-mini-code:free"
+		"primary_model": "qwen/qwen3-32b"
 	},
 	{
 		"name": "multimodal",
 		"description": "Route for requests with image inputs.",
-		"primary_model": "google/gemma-4-26b-a4b-it:free"
+		"primary_model": "meta-llama/llama-4-scout-17b-16e-instruct"
 	},
 	{
 		"name": "agentic",
 		"description": "Route for MCP server tool calling.",
-		"primary_model": "openai/gpt-oss-20b:free"
+		"primary_model": "openai/gpt-oss-20b"
 	}
 ]
