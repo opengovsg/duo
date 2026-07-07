@@ -346,7 +346,7 @@ describe("floating buttons", () => {
 	it("scroll-to-previous lands the previous user turn at the anchor offset, detached", async () => {
 		const chat = createChat({ turns: 6 });
 		const container = chat.fixture.container;
-		const userBlocks = [...container.querySelectorAll('[data-message-type="user"]')];
+		const userBlocks = Array.from(container.querySelectorAll('[data-message-type="user"]'));
 		const expected = userBlocks
 			.filter((el) => el.getBoundingClientRect().top - chat.viewportTop() < -1)
 			.at(-1);
