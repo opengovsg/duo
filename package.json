@@ -102,7 +102,7 @@
 		"sharp": "^0.33.4",
 		"tailwind-scrollbar": "^4.0.2",
 		"tailwindcss": "^4.3.0",
-		"undici": "^7.18.2",
+		"undici": "^7.29.0",
 		"uuid": "^14.0.1",
 		"web-haptics": "^0.0.6",
 		"zod": "^3.22.3"
